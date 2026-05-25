@@ -1,0 +1,6 @@
+{
+  "name": "Nexus Tycoon",
+  "description": "Idle tycoon game with resource management, automation, tactical combat, offline progress, visual personalization, multiplayer simulation, and seasonal events-perfectly optimized for all devices.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

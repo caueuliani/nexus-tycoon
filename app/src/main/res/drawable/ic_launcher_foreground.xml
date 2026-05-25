@@ -1,0 +1,38 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Outer branding glowing backdrop rings -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#1F2D4A"
+        android:strokeWidth="1.5"
+        android:pathData="M 54,20 A 34,34 0 1,1 53.99,20 Z" />
+        
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#00F5FF"
+        android:strokeWidth="1.2"
+        android:pathData="M 54,28 A 26,26 0 1,1 53.99,28 Z" />
+
+    <!-- Upward Growth Tycoon double Chevron Tower (Representing extreme scaling and industrial extraction) -->
+    <path
+        android:fillColor="#00F5FF"
+        android:pathData="M 54,34 L 74,54 L 64,54 L 54,44 L 44,54 L 34,54 Z" />
+
+    <path
+        android:fillColor="#FFFF1A8B"
+        android:pathData="M 54,48 L 70,64 L 62,64 L 54,56 L 46,64 L 38,64 Z" />
+
+    <!-- Core Sol energy nexus particle -->
+    <path
+        android:fillColor="#FFFFB300"
+        android:pathData="M 54,72 A 4,4 0 1,1 53.99,72 Z" />
+        
+    <!-- Base heavy industrial platform -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 32,78 L 76,78 L 70,84 L 38,84 Z" />
+</vector>
