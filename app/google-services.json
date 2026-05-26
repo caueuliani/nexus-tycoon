@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "64042343478",
+    "project_id": "nexus-idle-tycoon",
+    "storage_bucket": "nexus-idle-tycoon.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:64042343478:android:4e93863edcf6a6faeb0c97",
+        "android_client_info": {
+          "package_name": "com.aistudio.idletycoon.nxtyc"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC4mCG4C9FC7JZIr-J7jdUC4MtJ80No0lU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
