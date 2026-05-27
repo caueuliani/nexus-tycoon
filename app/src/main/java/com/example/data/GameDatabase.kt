@@ -17,7 +17,12 @@ data class GameState(
     val lastSavedTime: Long = System.currentTimeMillis(),
     val isSubscribed: Boolean = false,
     val highestCombatStage: Int = 1,
-    val hasAutoSellLicense: Boolean = false
+    val hasAutoSellLicense: Boolean = false,
+    val stage1CompletedCount: Int = 0,
+    val stage2CompletedCount: Int = 0,
+    val stage3CompletedCount: Int = 0,
+    val stage4CompletedCount: Int = 0,
+    val hasCompletedTutorial: Boolean = false
 )
 
 @Entity(tableName = "resources")
@@ -39,7 +44,50 @@ data class BusinessBuilding(
     val inputResource: String? = null,
     val inputAmountPerSec: Double = 0.0,
     val isAutoSelling: Boolean = false
-)
+) {
+    fun getMilestoneMultiplier(): Double {
+        if (level <= 0) return 1.0
+        var mult = 1.0
+        if (level >= 10) mult *= 2.0
+        if (level >= 25) mult *= 2.0
+        if (level >= 50) mult *= 2.5
+        if (level >= 100) mult *= 4.0
+        if (level >= 250) mult *= 5.0
+        if (level >= 500) mult *= 10.0
+        if (level >= 1000) mult *= 20.0
+        return mult
+    }
+
+    fun getNextMilestone(): Int {
+        return when {
+            level < 10 -> 10
+            level < 25 -> 25
+            level < 50 -> 50
+            level < 100 -> 100
+            level < 250 -> 250
+            level < 500 -> 500
+            level < 1000 -> 1000
+            else -> ((level / 500) + 1) * 500
+        }
+    }
+
+    fun getNextMilestoneMultiplierBoost(): Double {
+        return when {
+            level < 10 -> 2.0
+            level < 25 -> 2.0
+            level < 50 -> 2.5
+            level < 100 -> 4.0
+            level < 250 -> 5.0
+            level < 500 -> 10.0
+            level < 1000 -> 20.0
+            else -> 2.0
+        }
+    }
+
+    fun getActualProductionRate(): Double {
+        return productionRatePerLevel * level * getMilestoneMultiplier()
+    }
+}
 
 @Entity(tableName = "combat_units")
 data class CombatUnit(
@@ -111,7 +159,7 @@ interface GameDao {
         BusinessBuilding::class,
         CombatUnit::class
     ],
-    version = 3,
+    version = 5,
     exportSchema = false
 )
 abstract class GameDatabase : RoomDatabase() {

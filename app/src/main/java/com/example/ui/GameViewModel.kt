@@ -32,18 +32,43 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     // Offline income alert state
+    private val _upgradeMultiplier = MutableStateFlow("x1")
+    val upgradeMultiplier: StateFlow<String> = _upgradeMultiplier.asStateFlow()
+
+    fun setUpgradeMultiplier(multiplier: String) {
+        _upgradeMultiplier.value = multiplier
+    }
+
     private val _offlineEarnings = MutableStateFlow<OfflineEarnings?>(null)
     val offlineEarnings: StateFlow<OfflineEarnings?> = _offlineEarnings.asStateFlow()
 
     // Fluctuating market prices
     private val _marketPrices = MutableStateFlow<Map<String, Double>>(
-        mapOf("Energy Cell" to 1.5, "Iron Ore" to 6.0, "Hyperalloy" to 18.0, "Quantum Chip" to 125.0)
+        mapOf(
+            "Energy Cell" to 1.5,
+            "Iron Ore" to 6.0,
+            "Hyperalloy" to 18.0,
+            "Quantum Chip" to 125.0,
+            "Organic Feedstock" to 550.0,
+            "Neural Implant" to 2200.0,
+            "Antimatter Containment" to 14000.0,
+            "Warp Drive" to 95000.0
+        )
     )
     val marketPrices: StateFlow<Map<String, Double>> = _marketPrices.asStateFlow()
 
     // Fluctuating market trends
     private val _marketTrends = MutableStateFlow<Map<String, String>>(
-        mapOf("Energy Cell" to "STEADY", "Iron Ore" to "STEADY", "Hyperalloy" to "STEADY", "Quantum Chip" to "STEADY")
+        mapOf(
+            "Energy Cell" to "STEADY",
+            "Iron Ore" to "STEADY",
+            "Hyperalloy" to "STEADY",
+            "Quantum Chip" to "STEADY",
+            "Organic Feedstock" to "STEADY",
+            "Neural Implant" to "STEADY",
+            "Antimatter Containment" to "STEADY",
+            "Warp Drive" to "STEADY"
+        )
     )
     val marketTrends: StateFlow<Map<String, String>> = _marketTrends.asStateFlow()
 
@@ -151,7 +176,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
                 val prestigeBonus = 1.0 + (activeState.nebulaCores * 0.10)
                 val energyFactor = (if (activeState.isSubscribed) 1.5 else 1.0) * prestigeBonus
-                val baseProduced = building.productionRatePerLevel * building.level * energyFactor
+                val baseProduced = building.getActualProductionRate() * energyFactor
                 
                 // Deduct input if any
                 val inputName = building.inputResource
@@ -185,7 +210,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 val actualProduced = actualProducedMap[building.id.toString()] ?: 0.0
                 if (actualProduced <= 0.0) continue
 
-                val isHighLevelResource = building.resourceProduced == "Hyperalloy" || building.resourceProduced == "Quantum Chip"
+                val isHighLevelResource = building.resourceProduced != "Energy Cell" && building.resourceProduced != "Iron Ore"
                 if (building.isAutoSelling && activeState.hasAutoSellLicense && isHighLevelResource) {
                     // How much did we net gain after this tick?
                     val startQty = startResMap[building.resourceProduced] ?: 0.0
@@ -213,10 +238,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             ))
 
             // Update Global standings in leaderboard
-            val scoreVal = activeState.cash + (resMap["Energy Cell"] ?: 0.0) * 1.5 + 
-                           (resMap["Iron Ore"] ?: 0.0) * 6.0 + 
-                           (resMap["Hyperalloy"] ?: 0.0) * 18.0 + 
-                           (resMap["Quantum Chip"] ?: 0.0) * 125.0
+            var scoreVal = activeState.cash
+            for ((resName, qty) in resMap) {
+                val price = marketPrices.value[resName] ?: 1.0
+                scoreVal += qty * price
+            }
             
             _globalTradeStandings.update { current ->
                 current.map { entry ->
@@ -233,7 +259,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             "Energy Cell" to 1.0,
             "Iron Ore" to 5.0,
             "Hyperalloy" to 15.0,
-            "Quantum Chip" to 100.0
+            "Quantum Chip" to 100.0,
+            "Organic Feedstock" to 400.0,
+            "Neural Implant" to 2000.0,
+            "Antimatter Containment" to 12000.0,
+            "Warp Drive" to 80000.0
         )
         while (true) {
             delay(12000) // Price fluctuations every 12 seconds
@@ -327,6 +357,20 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     // User triggers Combat Mission Stage
     fun startCombatBattle(stageId: Int) {
         val stage = combatStages.find { it.id == stageId } ?: return
+        val state = gameState.value ?: com.example.data.GameState()
+        val completedCount = when (stageId) {
+            1 -> state.stage1CompletedCount
+            2 -> state.stage2CompletedCount
+            3 -> state.stage3CompletedCount
+            4 -> state.stage4CompletedCount
+            else -> 0
+        }
+
+        val scaleHp = 1.0 + 0.15 * completedCount
+        val scaleDmg = 1.0 + 0.12 * completedCount
+        val scaledEnemyHp = (stage.enemyHp * scaleHp).toInt()
+        val scaledEnemyDmg = (stage.enemyDmg * scaleDmg).toInt()
+
         val units = combatUnits.value
         val totalHealth = units.sumOf { it.health }
         val totalAttack = units.sumOf { it.attack }
@@ -339,9 +383,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _selectedStage.value = stageId
         _combatActive.value = true
         _combatLogs.value = listOf(
-            "INITIATING MISSION: ${stage.name}...",
+            "INITIATING MISSION: ${stage.name} (Nível de Ameaça: ${completedCount + 1})...",
             "Deploying Security squad... Total HP: $totalHealth, Attack Power: $totalAttack",
-            "Enemy threat spotted: Raider Vanguard HP: ${stage.enemyHp}, Power: ${stage.enemyDmg}"
+            "Enemy threat spotted: Raider Vanguard HP: $scaledEnemyHp, Power: $scaledEnemyDmg"
         )
 
         val battleState = ActiveBattleState(
@@ -349,9 +393,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             allyHp = totalHealth,
             allyMaxHp = totalHealth,
             allyDmg = totalAttack,
-            enemyHp = stage.enemyHp,
-            enemyMaxHp = stage.enemyHp,
-            enemyDmg = stage.enemyDmg,
+            enemyHp = scaledEnemyHp,
+            enemyMaxHp = scaledEnemyHp,
+            enemyDmg = scaledEnemyDmg,
             round = 1,
             isShieldActive = false
         )
@@ -460,16 +504,33 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val stage = combatStages.find { it.id == stageId } ?: return
         val state = gameState.value ?: return
 
-        val lootCash = stageId * 2500.0
-        val lootGems = stageId * 20L
-        val lootTokens = stageId * 5L
+        val completedCount = when (stageId) {
+            1 -> state.stage1CompletedCount
+            2 -> state.stage2CompletedCount
+            3 -> state.stage3CompletedCount
+            4 -> state.stage4CompletedCount
+            else -> 0
+        }
+
+        val scaleCash = 1.0 + 0.06 * completedCount
+        val scaleGems = 1.0 + 0.05 * completedCount
+        val scaleTokens = 1.0 + 0.05 * completedCount
+
+        val lootCash = (stageId * 2500.0) * scaleCash
+        val lootGems = ((stageId * 20L) * scaleGems).toLong()
+        val lootTokens = ((stageId * 5L) * scaleTokens).toLong()
         
-        repository.saveGameState(state.copy(
+        val nextState = state.copy(
             cash = state.cash + lootCash,
             starGems = state.starGems + lootGems,
             guildTokens = state.guildTokens + lootTokens,
-            highestCombatStage = max(state.highestCombatStage, stageId + 1)
-        ))
+            highestCombatStage = max(state.highestCombatStage, stageId + 1),
+            stage1CompletedCount = if (stageId == 1) state.stage1CompletedCount + 1 else state.stage1CompletedCount,
+            stage2CompletedCount = if (stageId == 2) state.stage2CompletedCount + 1 else state.stage2CompletedCount,
+            stage3CompletedCount = if (stageId == 3) state.stage3CompletedCount + 1 else state.stage3CompletedCount,
+            stage4CompletedCount = if (stageId == 4) state.stage4CompletedCount + 1 else state.stage4CompletedCount
+        )
+        repository.saveGameState(nextState)
 
         _combatStatus.value = CombatStatus.Victory(lootCash, lootGems, lootTokens)
         
@@ -518,7 +579,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     // Upgrades handlers
     fun upgradeBuilding(id: Int) {
         viewModelScope.launch {
-            repository.upgradeBuilding(id)
+            repository.upgradeBuilding(id, _upgradeMultiplier.value)
         }
     }
 
@@ -575,7 +636,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 "Energy Cell" to 500.0,
                 "Iron Ore" to 300.0,
                 "Hyperalloy" to 100.0,
-                "Quantum Chip" to 25.0
+                "Quantum Chip" to 25.0,
+                "Organic Feedstock" to 10.0,
+                "Neural Implant" to 5.0,
+                "Antimatter Containment" to 2.0,
+                "Warp Drive" to 0.0
             )
             val addedCash = 25000.0
             val success = repository.addSuppliesAndCash(100L, resourcesMap, addedCash)
@@ -603,13 +668,19 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun getPrestigeMinCash(nebulaCores: Long): Double {
+        return repository.getPrestigeMinCash(nebulaCores)
+    }
+
     fun performPrestigeAction(onSuccess: () -> Unit, onError: (String) -> Unit) {
         val current = gameState.value ?: return
-        if (current.cash < 100000.0) {
-            onError("Você precisa de pelo menos 100.000 C$ para realizar a Ascensão Estelar!")
+        val minCashRequired = getPrestigeMinCash(current.nebulaCores)
+        if (current.cash < minCashRequired) {
+            val formatted = java.text.NumberFormat.getNumberInstance(java.util.Locale.US).format(minCashRequired)
+            onError("Você precisa de pelo menos $formatted C$ para realizar a Ascensão Estelar!")
             return
         }
-        val earnedCores = kotlin.math.floor(kotlin.math.sqrt(current.cash / 100000.0)).toLong()
+        val earnedCores = kotlin.math.floor(kotlin.math.sqrt(current.cash / minCashRequired)).toLong()
         viewModelScope.launch {
             val success = repository.performPrestige(earnedCores)
             if (success) {
@@ -633,7 +704,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
             val prestigeBonus = 1.0 + (activeState.nebulaCores * 0.10)
             val energyFactor = (if (activeState.isSubscribed) 1.5 else 1.0) * prestigeBonus
-            val baseProduced = building.productionRatePerLevel * building.level * energyFactor
+            val baseProduced = building.getActualProductionRate() * energyFactor
             
             // Deduct input if any
             val inputName = building.inputResource
@@ -750,6 +821,20 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun completeTutorial() {
+        val current = gameState.value ?: return
+        viewModelScope.launch {
+            repository.saveGameState(current.copy(hasCompletedTutorial = true))
+        }
+    }
+
+    fun resetTutorial() {
+        val current = gameState.value ?: return
+        viewModelScope.launch {
+            repository.saveGameState(current.copy(hasCompletedTutorial = false))
+        }
+    }
+
     fun googleSignIn(email: String) {
         viewModelScope.launch {
             cloudSaveManager.handleGoogleSignInSuccess(email)
@@ -769,17 +854,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun downloadFromCloud(onSuccess: () -> Unit, onError: (String) -> Unit) {
         viewModelScope.launch {
             cloudSaveManager.downloadBackup(repository, onSuccess, onError)
-        }
-    }
-
-    fun restoreRawPayload(payload: Map<String, Any>, onSuccess: () -> Unit, onError: (String) -> Unit) {
-        viewModelScope.launch {
-            try {
-                cloudSaveManager.restoreFromPayload(repository, payload)
-                onSuccess()
-            } catch (e: Exception) {
-                onError(e.message ?: "Erro desconhecido")
-            }
         }
     }
 }

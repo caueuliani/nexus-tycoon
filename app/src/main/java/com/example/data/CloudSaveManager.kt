@@ -22,6 +22,17 @@ import java.io.File
  */
 class CloudSaveManager(private val context: Context) {
 
+    private val prefs = context.getSharedPreferences("firebase_settings_prefs", Context.MODE_PRIVATE)
+
+    private val _customProjectId = MutableStateFlow(prefs.getString("firebase_project_id", "nexus-idle-tycoon") ?: "nexus-idle-tycoon")
+    val customProjectId: StateFlow<String> = _customProjectId
+
+    private val _customApiKey = MutableStateFlow(prefs.getString("firebase_api_key", "placeholder-api-key") ?: "placeholder-api-key")
+    val customApiKey: StateFlow<String> = _customApiKey
+
+    private val _customAppId = MutableStateFlow(prefs.getString("firebase_app_id", "1:123456789012:android:9f83ca06d8b14014") ?: "1:123456789012:android:9f83ca06d8b14014")
+    val customAppId: StateFlow<String> = _customAppId
+
     private var firebaseInitialized = false
     private var auth: FirebaseAuth? = null
     private var db: FirebaseFirestore? = null
@@ -41,14 +52,29 @@ class CloudSaveManager(private val context: Context) {
 
     init {
         try {
-            // Attempt dynamic Firebase initialization
-            if (FirebaseApp.getApps(context).isEmpty()) {
-                // If a developer wants to use their own keys directly without google-services.json,
-                // they can set them here or rely on google-services.json to exist.
+            val pId = _customProjectId.value
+            val aKey = _customApiKey.value
+            val aId = _customAppId.value
+
+            val apps = FirebaseApp.getApps(context)
+            if (apps.isEmpty()) {
                 val options = FirebaseOptions.Builder()
-                    .setApplicationId("1:123456789012:android:9f83ca06d8b14014")
-                    .setApiKey("placeholder-api-key")
-                    .setProjectId("nxtyc-idletycoon")
+                    .setApplicationId(aId)
+                    .setApiKey(aKey)
+                    .setProjectId(pId)
+                    .build()
+                FirebaseApp.initializeApp(context, options)
+            } else {
+                for (app in apps) {
+                    if (app.name == FirebaseApp.DEFAULT_APP_NAME) {
+                        app.delete()
+                        break
+                    }
+                }
+                val options = FirebaseOptions.Builder()
+                    .setApplicationId(aId)
+                    .setApiKey(aKey)
+                    .setProjectId(pId)
                     .build()
                 FirebaseApp.initializeApp(context, options)
             }
@@ -56,16 +82,15 @@ class CloudSaveManager(private val context: Context) {
             db = FirebaseFirestore.getInstance()
             firebaseInitialized = true
             _isSandboxMode.value = false // Successfully bound real Firebase
-            addLog("Firebase Inicializado com Sucesso (Modo de Produção).")
+            addLog("Firebase Inicializado (Projeto: $pId).")
             _userEmail.value = auth?.currentUser?.email
-        } catch (e: Exception) {
-            Log.w("CloudSaveManager", "Firebase not configured on client. Falling back to Elite Sandbox mode.", e)
+        } catch (e: Throwable) {
+            Log.w("CloudSaveManager", "Firebase initialization failed, falling back to Sandbox", e)
             firebaseInitialized = false
             _isSandboxMode.value = true
             addLog("Firebase não configurado ou chave pendente. Inicializado no Modo Sandbox de Testes.")
         }
     }
-
     fun addLog(msg: String) {
         val timestamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
         _syncLogs.value = (_syncLogs.value + "[$timestamp] $msg").takeLast(5)
@@ -132,6 +157,11 @@ class CloudSaveManager(private val context: Context) {
                 "isSubscribed" to state.isSubscribed,
                 "highestCombatStage" to state.highestCombatStage,
                 "hasAutoSellLicense" to state.hasAutoSellLicense,
+                "stage1CompletedCount" to state.stage1CompletedCount,
+                "stage2CompletedCount" to state.stage2CompletedCount,
+                "stage3CompletedCount" to state.stage3CompletedCount,
+                "stage4CompletedCount" to state.stage4CompletedCount,
+                "hasCompletedTutorial" to state.hasCompletedTutorial,
                 "lastSavedTime" to System.currentTimeMillis(),
                 
                 "resources" to resourcesList.map { r -> mapOf("name" to r.name, "quantity" to r.quantity) },
@@ -160,14 +190,14 @@ class CloudSaveManager(private val context: Context) {
             } else {
                 // REAL MODE: Fire up real Firestore write
                 val dbRef = db ?: throw Exception("Firestore não inicializado.")
-                dbRef.collection("users").document(email).collection("save").document("latest")
+                dbRef.collection("users").document(email)
                     .set(payload)
                     .await()
                 _syncing.value = false
                 addLog("Backup de produção transmitido com sucesso ao Firebase!")
                 onSuccess()
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             _syncing.value = false
             addLog("Erro ao salvar: ${e.message}")
             onError(e.message ?: "Erro de conexão")
@@ -211,7 +241,7 @@ class CloudSaveManager(private val context: Context) {
             } else {
                 // REAL MODE: Querying Firestore
                 val dbRef = db ?: throw Exception("Firestore não inicializado.")
-                val doc = dbRef.collection("users").document(email).collection("save").document("latest")
+                val doc = dbRef.collection("users").document(email)
                     .get()
                     .await()
                 
@@ -234,7 +264,7 @@ class CloudSaveManager(private val context: Context) {
                 addLog("Backup do Firebase restaurado com sucesso!")
                 onSuccess()
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             _syncing.value = false
             addLog("Falha ao carregar: ${e.message}")
             onError(e.message ?: "Erro ao obter backup")
@@ -256,6 +286,11 @@ class CloudSaveManager(private val context: Context) {
             isSubscribed = payload["isSubscribed"] as? Boolean ?: false,
             highestCombatStage = (payload["highestCombatStage"] as? Number)?.toInt() ?: 1,
             hasAutoSellLicense = payload["hasAutoSellLicense"] as? Boolean ?: false,
+            stage1CompletedCount = (payload["stage1CompletedCount"] as? Number)?.toInt() ?: 0,
+            stage2CompletedCount = (payload["stage2CompletedCount"] as? Number)?.toInt() ?: 0,
+            stage3CompletedCount = (payload["stage3CompletedCount"] as? Number)?.toInt() ?: 0,
+            stage4CompletedCount = (payload["stage4CompletedCount"] as? Number)?.toInt() ?: 0,
+            hasCompletedTutorial = payload["hasCompletedTutorial"] as? Boolean ?: false,
             lastSavedTime = System.currentTimeMillis()
         )
 

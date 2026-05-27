@@ -21,7 +21,9 @@ class GameRepository(private val db: GameDatabase) {
 
     suspend fun checkAndInitialize() = withContext(Dispatchers.IO) {
         val state = dao.getGameStateDirect()
-        if (state == null) {
+        val buildingsList = dao.getBuildingsDirect()
+        if (state == null || buildingsList.size < 8) {
+            db.clearAllTables()
             // Seed base state
             dao.saveGameState(GameState())
             
@@ -30,7 +32,11 @@ class GameRepository(private val db: GameDatabase) {
                 ResourceInventory("Energy Cell", 100.0),
                 ResourceInventory("Iron Ore", 0.0),
                 ResourceInventory("Hyperalloy", 0.0),
-                ResourceInventory("Quantum Chip", 0.0)
+                ResourceInventory("Quantum Chip", 0.0),
+                ResourceInventory("Organic Feedstock", 0.0),
+                ResourceInventory("Neural Implant", 0.0),
+                ResourceInventory("Antimatter Containment", 0.0),
+                ResourceInventory("Warp Drive", 0.0)
             ))
 
             // Seed Buildings
@@ -41,7 +47,7 @@ class GameRepository(private val db: GameDatabase) {
                     level = 1,
                     isAutomated = true,
                     baseCost = 80.0,
-                    costMultiplier = 1.13,
+                    costMultiplier = 1.12,
                     productionRatePerLevel = 2.0,
                     resourceProduced = "Energy Cell",
                     inputResource = null,
@@ -53,8 +59,8 @@ class GameRepository(private val db: GameDatabase) {
                     name = "Deep-Core Drill",
                     level = 0,
                     isAutomated = false,
-                    baseCost = 250.0,
-                    costMultiplier = 1.16,
+                    baseCost = 350.0,
+                    costMultiplier = 1.14,
                     productionRatePerLevel = 1.5,
                     resourceProduced = "Iron Ore",
                     inputResource = "Energy Cell",
@@ -66,12 +72,12 @@ class GameRepository(private val db: GameDatabase) {
                     name = "Alloy Smelter",
                     level = 0,
                     isAutomated = false,
-                    baseCost = 1200.0,
-                    costMultiplier = 1.20,
-                    productionRatePerLevel = 0.8,
+                    baseCost = 1500.0,
+                    costMultiplier = 1.16,
+                    productionRatePerLevel = 1.0,
                     resourceProduced = "Hyperalloy",
                     inputResource = "Iron Ore",
-                    inputAmountPerSec = 1.2,
+                    inputAmountPerSec = 0.3,
                     isAutoSelling = false
                 ),
                 BusinessBuilding(
@@ -79,12 +85,64 @@ class GameRepository(private val db: GameDatabase) {
                     name = "Quantum Assembler",
                     level = 0,
                     isAutomated = false,
-                    baseCost = 8500.0,
-                    costMultiplier = 1.25,
-                    productionRatePerLevel = 0.2,
+                    baseCost = 10000.0,
+                    costMultiplier = 1.18,
+                    productionRatePerLevel = 0.6,
                     resourceProduced = "Quantum Chip",
                     inputResource = "Energy Cell",
-                    inputAmountPerSec = 4.0,
+                    inputAmountPerSec = 1.5,
+                    isAutoSelling = false
+                ),
+                BusinessBuilding(
+                    id = 5,
+                    name = "Biosphere Dome",
+                    level = 0,
+                    isAutomated = false,
+                    baseCost = 75000.0,
+                    costMultiplier = 1.20,
+                    productionRatePerLevel = 0.4,
+                    resourceProduced = "Organic Feedstock",
+                    inputResource = "Energy Cell",
+                    inputAmountPerSec = 3.0,
+                    isAutoSelling = false
+                ),
+                BusinessBuilding(
+                    id = 6,
+                    name = "Cybernetics Lab",
+                    level = 0,
+                    isAutomated = false,
+                    baseCost = 500000.0,
+                    costMultiplier = 1.22,
+                    productionRatePerLevel = 0.25,
+                    resourceProduced = "Neural Implant",
+                    inputResource = "Quantum Chip",
+                    inputAmountPerSec = 0.1,
+                    isAutoSelling = false
+                ),
+                BusinessBuilding(
+                    id = 7,
+                    name = "Antimatter Reactor",
+                    level = 0,
+                    isAutomated = false,
+                    baseCost = 4000000.0,
+                    costMultiplier = 1.24,
+                    productionRatePerLevel = 0.15,
+                    resourceProduced = "Antimatter Containment",
+                    inputResource = "Hyperalloy",
+                    inputAmountPerSec = 0.2,
+                    isAutoSelling = false
+                ),
+                BusinessBuilding(
+                    id = 8,
+                    name = "Galactic Shipyard",
+                    level = 0,
+                    isAutomated = false,
+                    baseCost = 35000000.0,
+                    costMultiplier = 1.26,
+                    productionRatePerLevel = 0.08,
+                    resourceProduced = "Warp Drive",
+                    inputResource = "Neural Implant",
+                    inputAmountPerSec = 0.05,
                     isAutoSelling = false
                 )
             ))
@@ -124,7 +182,7 @@ class GameRepository(private val db: GameDatabase) {
         // 1. Calculate production with input dependencies sequentially (upstream to downstream)
         for (building in buildingsList) {
             if (building.level == 0 || !building.isAutomated) continue
-            var totalProduction = building.productionRatePerLevel * building.level * seconds * factor
+            var totalProduction = building.getActualProductionRate() * seconds * factor
             
             // Check inputs if any
             val input = building.inputResource
@@ -152,7 +210,11 @@ class GameRepository(private val db: GameDatabase) {
             "Energy Cell" to 1.0,
             "Iron Ore" to 5.0,
             "Hyperalloy" to 15.0,
-            "Quantum Chip" to 100.0
+            "Quantum Chip" to 100.0,
+            "Organic Feedstock" to 400.0,
+            "Neural Implant" to 2000.0,
+            "Antimatter Containment" to 12000.0,
+            "Warp Drive" to 80000.0
         )
         for (building in buildingsList) {
             if (building.level == 0 || !building.isAutomated) continue
@@ -160,7 +222,7 @@ class GameRepository(private val db: GameDatabase) {
             if (actualProduced <= 0.0) continue
 
             val prodRes = building.resourceProduced
-            val isHighLevelResource = prodRes == "Hyperalloy" || prodRes == "Quantum Chip"
+            val isHighLevelResource = prodRes != "Energy Cell" && prodRes != "Iron Ore"
             if (building.isAutoSelling && state.hasAutoSellLicense && isHighLevelResource) {
                 val startQty = startResources[prodRes] ?: 0.0
                 val currentQty = currentResources[prodRes] ?: 0.0
@@ -218,15 +280,93 @@ class GameRepository(private val db: GameDatabase) {
         dao.saveResource(res)
     }
 
-    suspend fun upgradeBuilding(buildingId: Int): Boolean = withContext(Dispatchers.IO) {
+    fun calculateMultiUpgrade(
+        baseCost: Double,
+        costMultiplier: Double,
+        currentLevel: Int,
+        currentCash: Double,
+        multiplier: String
+    ): Pair<Int, Double> {
+        val targetMultiplier = when (multiplier) {
+            "x5" -> 5
+            "x10" -> 10
+            "MAX" -> 999999
+            else -> 1
+        }
+
+        var totalCost = 0.0
+        var levelsGained = 0
+        var currentL = currentLevel
+        var remainingCash = currentCash
+
+        if (currentL == 0) {
+            val unlockCost = baseCost
+            if (remainingCash < unlockCost) {
+                return Pair(1, unlockCost)
+            }
+            totalCost += unlockCost
+            levelsGained = 1
+            remainingCash -= unlockCost
+            currentL = 1
+            if (targetMultiplier == 1) {
+                return Pair(1, unlockCost)
+            }
+        }
+
+        val nLimit = if (multiplier == "MAX") {
+            if (remainingCash <= 0.0) {
+                0
+            } else {
+                val r = costMultiplier
+                val maxPossible = if (kotlin.math.abs(r - 1.0) < 1e-9) {
+                    val denom = baseCost * r.pow(currentL.toDouble())
+                    if (denom <= 0.0) 0 else (remainingCash / denom).toInt()
+                } else {
+                    val denom = baseCost * r.pow(currentL.toDouble())
+                    val arg = 1.0 + (remainingCash * (r - 1.0)) / denom
+                    if (arg <= 1.0) {
+                        0
+                    } else {
+                        (kotlin.math.log(arg, kotlin.math.E) / kotlin.math.log(r, kotlin.math.E)).toInt()
+                    }
+                }
+                kotlin.math.min(maxPossible, 999999 - levelsGained)
+            }
+        } else {
+            targetMultiplier - levelsGained
+        }
+
+        if (nLimit > 0) {
+            val r = costMultiplier
+            val addCost = if (kotlin.math.abs(r - 1.0) < 1e-9) {
+                baseCost * r.pow(currentL.toDouble()) * nLimit
+            } else {
+                baseCost * r.pow(currentL.toDouble()) * (r.pow(nLimit.toDouble()) - 1.0) / (r - 1.0)
+            }
+            totalCost += addCost
+            levelsGained += nLimit
+        }
+
+        if (levelsGained == 0) {
+            val nextLevelCost = baseCost * costMultiplier.pow(currentL.toDouble())
+            return Pair(1, nextLevelCost)
+        }
+
+        return Pair(levelsGained, totalCost)
+    }
+
+    suspend fun upgradeBuilding(buildingId: Int, multiplier: String): Boolean = withContext(Dispatchers.IO) {
         val state = dao.getGameStateDirect() ?: return@withContext false
         val buildingsList = dao.getBuildingsDirect()
         val b = buildingsList.find { it.id == buildingId } ?: return@withContext false
-        val cost = b.baseCost * b.costMultiplier.pow(b.level)
+        
+        val calc = calculateMultiUpgrade(b.baseCost, b.costMultiplier, b.level, state.cash, multiplier)
+        val levelsGained = calc.first
+        val totalCost = calc.second
 
-        if (state.cash >= cost) {
-            dao.saveGameState(state.copy(cash = state.cash - cost))
-            dao.updateBuilding(b.copy(level = b.level + 1))
+        if (state.cash >= totalCost) {
+            dao.saveGameState(state.copy(cash = state.cash - totalCost))
+            dao.updateBuilding(b.copy(level = b.level + levelsGained))
             return@withContext true
         }
         return@withContext false
@@ -248,7 +388,7 @@ class GameRepository(private val db: GameDatabase) {
     suspend fun toggleAutoSelling(buildingId: Int, autoSell: Boolean): Boolean = withContext(Dispatchers.IO) {
         val buildingsList = dao.getBuildingsDirect()
         val b = buildingsList.find { it.id == buildingId } ?: return@withContext false
-        val isHighLevelResource = b.resourceProduced == "Hyperalloy" || b.resourceProduced == "Quantum Chip"
+        val isHighLevelResource = b.resourceProduced != "Energy Cell" && b.resourceProduced != "Iron Ore"
         if (!isHighLevelResource && autoSell) {
             return@withContext false
         }
@@ -314,12 +454,16 @@ class GameRepository(private val db: GameDatabase) {
             var productionPerHour = 0.0
             for (b in buildingsList) {
                 if (b.level > 0) {
-                    val rate = b.productionRatePerLevel * b.level
+                    val rate = b.getActualProductionRate()
                     val baseValue = when (b.resourceProduced) {
                         "Energy Cell" -> 0.5
                         "Iron Ore" -> 1.5
-                        "Hyperalloy" -> 4.5
+                        "Hyperalloy" -> 5.0
                         "Quantum Chip" -> 15.0
+                        "Organic Feedstock" -> 45.0
+                        "Neural Implant" -> 150.0
+                        "Antimatter Containment" -> 600.0
+                        "Warp Drive" -> 2500.0
                         else -> 1.0
                     }
                     productionPerHour += rate * baseValue * 3600.0
@@ -334,7 +478,7 @@ class GameRepository(private val db: GameDatabase) {
             val updated = currentRes.map { r ->
                 val matchingBuilding = buildingsList.find { it.resourceProduced == r.name }
                 val rate = if (matchingBuilding != null && matchingBuilding.level > 0) {
-                    matchingBuilding.productionRatePerLevel * matchingBuilding.level
+                    matchingBuilding.getActualProductionRate()
                 } else 0.0
                 val amountGained = rate * 3600.0 * hours * 0.5
                 r.copy(quantity = r.quantity + amountGained)
@@ -350,9 +494,15 @@ class GameRepository(private val db: GameDatabase) {
         return@withContext false
     }
 
+    fun getPrestigeMinCash(nebulaCores: Long): Double {
+        val ascensions = (nebulaCores - 15).coerceAtLeast(0L)
+        return 100000.0 * 1.6.pow(ascensions.toDouble())
+    }
+
     suspend fun performPrestige(earnedCores: Long): Boolean = withContext(Dispatchers.IO) {
         val state = dao.getGameStateDirect() ?: return@withContext false
-        if (state.cash < 100000.0) return@withContext false
+        val minCashRequired = getPrestigeMinCash(state.nebulaCores)
+        if (state.cash < minCashRequired) return@withContext false
         
         dao.saveGameState(state.copy(
             cash = 5000.0,
@@ -363,7 +513,11 @@ class GameRepository(private val db: GameDatabase) {
             ResourceInventory("Energy Cell", 100.0),
             ResourceInventory("Iron Ore", 0.0),
             ResourceInventory("Hyperalloy", 0.0),
-            ResourceInventory("Quantum Chip", 0.0)
+            ResourceInventory("Quantum Chip", 0.0),
+            ResourceInventory("Organic Feedstock", 0.0),
+            ResourceInventory("Neural Implant", 0.0),
+            ResourceInventory("Antimatter Containment", 0.0),
+            ResourceInventory("Warp Drive", 0.0)
         ))
         
         dao.saveBuildings(listOf(
@@ -373,7 +527,7 @@ class GameRepository(private val db: GameDatabase) {
                 level = 1,
                 isAutomated = true,
                 baseCost = 80.0,
-                costMultiplier = 1.13,
+                costMultiplier = 1.12,
                 productionRatePerLevel = 2.0,
                 resourceProduced = "Energy Cell",
                 inputResource = null,
@@ -385,8 +539,8 @@ class GameRepository(private val db: GameDatabase) {
                 name = "Deep-Core Drill",
                 level = 0,
                 isAutomated = false,
-                baseCost = 250.0,
-                costMultiplier = 1.16,
+                baseCost = 350.0,
+                costMultiplier = 1.14,
                 productionRatePerLevel = 1.5,
                 resourceProduced = "Iron Ore",
                 inputResource = "Energy Cell",
@@ -398,12 +552,12 @@ class GameRepository(private val db: GameDatabase) {
                 name = "Alloy Smelter",
                 level = 0,
                 isAutomated = false,
-                baseCost = 1200.0,
-                costMultiplier = 1.20,
-                productionRatePerLevel = 0.8,
+                baseCost = 1500.0,
+                costMultiplier = 1.16,
+                productionRatePerLevel = 1.0,
                 resourceProduced = "Hyperalloy",
                 inputResource = "Iron Ore",
-                inputAmountPerSec = 1.2,
+                inputAmountPerSec = 0.3,
                 isAutoSelling = false
             ),
             BusinessBuilding(
@@ -411,12 +565,64 @@ class GameRepository(private val db: GameDatabase) {
                 name = "Quantum Assembler",
                 level = 0,
                 isAutomated = false,
-                baseCost = 8500.0,
-                costMultiplier = 1.25,
-                productionRatePerLevel = 0.2,
+                baseCost = 10000.0,
+                costMultiplier = 1.18,
+                productionRatePerLevel = 0.6,
                 resourceProduced = "Quantum Chip",
                 inputResource = "Energy Cell",
-                inputAmountPerSec = 4.0,
+                inputAmountPerSec = 1.5,
+                isAutoSelling = false
+            ),
+            BusinessBuilding(
+                id = 5,
+                name = "Biosphere Dome",
+                level = 0,
+                isAutomated = false,
+                baseCost = 75000.0,
+                costMultiplier = 1.20,
+                productionRatePerLevel = 0.4,
+                resourceProduced = "Organic Feedstock",
+                inputResource = "Energy Cell",
+                inputAmountPerSec = 3.0,
+                isAutoSelling = false
+            ),
+            BusinessBuilding(
+                id = 6,
+                name = "Cybernetics Lab",
+                level = 0,
+                isAutomated = false,
+                baseCost = 500000.0,
+                costMultiplier = 1.22,
+                productionRatePerLevel = 0.25,
+                resourceProduced = "Neural Implant",
+                inputResource = "Quantum Chip",
+                inputAmountPerSec = 0.1,
+                isAutoSelling = false
+            ),
+            BusinessBuilding(
+                id = 7,
+                name = "Antimatter Reactor",
+                level = 0,
+                isAutomated = false,
+                baseCost = 4000000.0,
+                costMultiplier = 1.24,
+                productionRatePerLevel = 0.15,
+                resourceProduced = "Antimatter Containment",
+                inputResource = "Hyperalloy",
+                inputAmountPerSec = 0.2,
+                isAutoSelling = false
+            ),
+            BusinessBuilding(
+                id = 8,
+                name = "Galactic Shipyard",
+                level = 0,
+                isAutomated = false,
+                baseCost = 35000000.0,
+                costMultiplier = 1.26,
+                productionRatePerLevel = 0.08,
+                resourceProduced = "Warp Drive",
+                inputResource = "Neural Implant",
+                inputAmountPerSec = 0.05,
                 isAutoSelling = false
             )
         ))
