@@ -16,6 +16,8 @@ class GameRepository(private val db: GameDatabase) {
     val resources: Flow<List<ResourceInventory>> = dao.getResourcesFlow()
     val buildings: Flow<List<BusinessBuilding>> = dao.getBuildingsFlow()
     val combatUnits: Flow<List<CombatUnit>> = dao.getCombatUnitsFlow()
+    val researchers: Flow<List<ResearcherCard>> = dao.getResearchersFlow()
+    val activeMissions: Flow<List<ActiveMission>> = dao.getActiveMissionsFlow()
 
     suspend fun getGameStateDirect(): GameState? = dao.getGameStateDirect()
 
@@ -23,7 +25,11 @@ class GameRepository(private val db: GameDatabase) {
         val state = dao.getGameStateDirect()
         val buildingsList = dao.getBuildingsDirect()
         if (state == null || buildingsList.size < 8) {
-            db.clearAllTables()
+            try {
+                db.clearAllTables()
+            } catch (e: Exception) {
+                android.util.Log.e("GameRepository", "db.clearAllTables() failed", e)
+            }
             // Seed base state
             dao.saveGameState(GameState())
             
@@ -154,6 +160,23 @@ class GameRepository(private val db: GameDatabase) {
                 CombatUnit(3, "Plasma Striker", "Ranged DPS", 1, 90, 42, 500.0),
                 CombatUnit(4, "EMP Interceptor", "Disrupter", 1, 120, 25, 1200.0)
             ))
+
+            // Seed Researchers / Scientists
+            dao.saveResearchers(listOf(
+                ResearcherCard(1, "Elon Dusk-V", "Reduz o custo total de upgrades do Painel Solar em -15% por nível.", 1, 1, 2, 1, "COST_REDUCTION", "COMMON"),
+                ResearcherCard(2, "Marie Curie-ous", "Duplica a taxa de faturamento da Broca de Perfuração.", 0, 0, 2, 2, "PRODUCTION", "COMMON"),
+                ResearcherCard(3, "Ada Lovelace-space", "Aumenta a velocidade de refino do Fundidor de Liga em +50% por nível.", 0, 0, 3, 3, "SPEED", "RARE"),
+                ResearcherCard(4, "Albert Ein-stone", "Duplica a taxa de processamento do Montador Quântico.", 0, 0, 3, 4, "PRODUCTION", "RARE"),
+                ResearcherCard(5, "Karl Mark-IV", "Soma +1.0 Camarada/segundo de forma permanente na corporação.", 0, 0, 5, 0, "COMRADE_GEN", "EPIC"),
+                ResearcherCard(6, "Nebula Quantum Core", "Multiplica a produção global de TODAS as fábricas em +100% por nível.", 0, 0, 5, 0, "PRODUCTION", "SUPREME")
+            ))
+
+            // Seed Active Missions
+            dao.saveActiveMissions(listOf(
+                ActiveMission(1, "Possuir 5 Sol-Power Arrays", 1.0, 5.0, false, false, "OWN_BUILDING", 1, "", 15, 50, "COMUM"),
+                ActiveMission(2, "Coletar 250 de Célula de Energia", 100.0, 250.0, false, false, "COLLECT_RESOURCE", 0, "Energy Cell", 20, 80, "EPICA"),
+                ActiveMission(3, "Acumular 8.000 de Créditos (C$)", 5000.0, 8000.0, false, false, "EARN_CASH", 0, "", 30, 150, "SUPREMA")
+            ))
         }
     }
 
@@ -179,10 +202,29 @@ class GameRepository(private val db: GameDatabase) {
         val prestigeBonus = 1.0 + (state.nebulaCores * 0.10)
         val factor = (if (state.isSubscribed) 1.5 else 1.0) * prestigeBonus
 
+        val resCardList = dao.getResearchersDirect()
+
         // 1. Calculate production with input dependencies sequentially (upstream to downstream)
         for (building in buildingsList) {
             if (building.level == 0 || !building.isAutomated) continue
-            var totalProduction = building.getActualProductionRate() * seconds * factor
+            
+            // --- Scientist/Researcher multipliers ---
+            // a) Global supreme boost (ID 6)
+            val globalSupremeCard = resCardList.find { it.id == 6 }
+            val globalSupremeMulti = 1.0 + (if (globalSupremeCard != null && globalSupremeCard.level > 0) globalSupremeCard.getBoostValue() else 0.0)
+            
+            // b) Local production boost (target ID matches building)
+            val localProdCard = resCardList.find { it.targetBuildingId == building.id && it.boostType == "PRODUCTION" }
+            val localProdMulti = 1.0 + (if (localProdCard != null && localProdCard.level > 0) localProdCard.getBoostValue() else 0.0)
+            
+            // c) Local speed boost (speeding up turns = more output)
+            val localSpeedCard = resCardList.find { it.targetBuildingId == building.id && it.boostType == "SPEED" }
+            val localSpeedMulti = 1.0 + (if (localSpeedCard != null && localSpeedCard.level > 0) localSpeedCard.getBoostValue() else 0.0)
+
+            val scienceProdMulti = 1.0 + (state.scienceProdLevel * 0.15)
+            val researcherMultipliersCombined = globalSupremeMulti * localProdMulti * localSpeedMulti * scienceProdMulti
+
+            var totalProduction = building.getActualProductionRate() * seconds * factor * researcherMultipliersCombined
             
             // Check inputs if any
             val input = building.inputResource
@@ -230,7 +272,8 @@ class GameRepository(private val db: GameDatabase) {
                 
                 val sellAmount = minOf(actualProduced, netSurplus)
                 if (sellAmount > 0.0) {
-                    val basePrice = basePrices[prodRes] ?: 1.0
+                    val scienceCreditsMulti = 1.0 + (state.scienceCreditsLevel * 0.10)
+                    val basePrice = (basePrices[prodRes] ?: 1.0) * scienceCreditsMulti
                     creditEarned += sellAmount * basePrice
                     currentResources[prodRes] = currentQty - sellAmount
                 }
@@ -338,13 +381,24 @@ class GameRepository(private val db: GameDatabase) {
 
         if (nLimit > 0) {
             val r = costMultiplier
-            val addCost = if (kotlin.math.abs(r - 1.0) < 1e-9) {
+            var addCost = if (kotlin.math.abs(r - 1.0) < 1e-9) {
                 baseCost * r.pow(currentL.toDouble()) * nLimit
             } else {
                 baseCost * r.pow(currentL.toDouble()) * (r.pow(nLimit.toDouble()) - 1.0) / (r - 1.0)
             }
+
+            var currentLimit = nLimit
+            while (currentLimit > 0 && addCost > remainingCash) {
+                currentLimit--
+                addCost = if (kotlin.math.abs(r - 1.0) < 1e-9) {
+                    baseCost * r.pow(currentL.toDouble()) * currentLimit
+                } else {
+                    baseCost * r.pow(currentL.toDouble()) * (r.pow(currentLimit.toDouble()) - 1.0) / (r - 1.0)
+                }
+            }
+
             totalCost += addCost
-            levelsGained += nLimit
+            levelsGained += currentLimit
         }
 
         if (levelsGained == 0) {
@@ -355,17 +409,42 @@ class GameRepository(private val db: GameDatabase) {
         return Pair(levelsGained, totalCost)
     }
 
+    fun getBuildingComradeCost(buildingId: Int, currentLevel: Int): Double {
+        val base = when (buildingId) {
+            1 -> 1.0
+            2 -> 10.0
+            3 -> 100.0
+            4 -> 1000.0
+            5 -> 10000.0
+            6 -> 100000.0
+            7 -> 1000000.0
+            8 -> 10000000.0
+            else -> 1.0
+        }
+        return base * (1.08.pow(currentLevel))
+    }
+
     suspend fun upgradeBuilding(buildingId: Int, multiplier: String): Boolean = withContext(Dispatchers.IO) {
         val state = dao.getGameStateDirect() ?: return@withContext false
         val buildingsList = dao.getBuildingsDirect()
         val b = buildingsList.find { it.id == buildingId } ?: return@withContext false
         
-        val calc = calculateMultiUpgrade(b.baseCost, b.costMultiplier, b.level, state.cash, multiplier)
+        val resCardList = dao.getResearchersDirect()
+        val costCard = resCardList.find { it.targetBuildingId == buildingId && it.boostType == "COST_REDUCTION" }
+        val costReductionRate = if (costCard != null && costCard.level > 0) costCard.getBoostValue() else 0.0
+        val costMultiplierFactor = (1.0 - costReductionRate).coerceIn(0.2, 1.0)
+        val discountedBaseCost = b.baseCost * costMultiplierFactor
+
+        val calc = calculateMultiUpgrade(discountedBaseCost, b.costMultiplier, b.level, state.cash, multiplier)
         val levelsGained = calc.first
         val totalCost = calc.second
 
+        if (levelsGained <= 0) return@withContext false
+
         if (state.cash >= totalCost) {
-            dao.saveGameState(state.copy(cash = state.cash - totalCost))
+            dao.saveGameState(state.copy(
+                cash = state.cash - totalCost
+            ))
             dao.updateBuilding(b.copy(level = b.level + levelsGained))
             return@withContext true
         }
@@ -642,17 +721,41 @@ class GameRepository(private val db: GameDatabase) {
         dao.saveCombatUnits(combatUnits)
     }
 
+    // Support functions for Researchers
+    suspend fun updateResearcher(r: ResearcherCard) = dao.updateResearcher(r)
+    suspend fun saveResearchers(list: List<ResearcherCard>) = dao.saveResearchers(list)
+    suspend fun getResearchersDirect(): List<ResearcherCard> = dao.getResearchersDirect()
+
+    // Support functions for ActiveMissions
+    suspend fun updateActiveMission(m: ActiveMission) = dao.updateActiveMission(m)
+    suspend fun saveActiveMissions(list: List<ActiveMission>) = dao.saveActiveMissions(list)
+    suspend fun getActiveMissionsDirect(): List<ActiveMission> = dao.getActiveMissionsDirect()
+
     companion object {
         @Volatile
         private var INSTANCE: GameRepository? = null
 
         fun getInstance(context: Context): GameRepository {
             return INSTANCE ?: synchronized(this) {
-                val db = Room.databaseBuilder(
-                    context.applicationContext,
-                    GameDatabase::class.java,
-                    "nexus_tycoon.db"
-                ).fallbackToDestructiveMigration().build()
+                val db = try {
+                    Room.databaseBuilder(
+                        context.applicationContext,
+                        GameDatabase::class.java,
+                        "nexus_tycoon.db"
+                    ).fallbackToDestructiveMigration().build()
+                } catch (e: Exception) {
+                    android.util.Log.e("GameRepository", "Failed to build database, deleting file and retrying", e)
+                    try {
+                        context.deleteDatabase("nexus_tycoon.db")
+                    } catch (err: Exception) {
+                        android.util.Log.e("GameRepository", "Failed to delete database file", err)
+                    }
+                    Room.databaseBuilder(
+                        context.applicationContext,
+                        GameDatabase::class.java,
+                        "nexus_tycoon.db"
+                    ).fallbackToDestructiveMigration().build()
+                }
                 val repo = GameRepository(db)
                 INSTANCE = repo
                 repo

@@ -173,7 +173,8 @@ fun CosmicUniverseBackground(content: @Composable () -> Unit) {
 
 @Composable
 fun MainAppContent(viewModel: GameViewModel) {
-    val state by viewModel.gameState.collectAsStateWithLifecycle()
+    val stateNullable by viewModel.gameState.collectAsStateWithLifecycle()
+    val state = stateNullable
     val resources by viewModel.resources.collectAsStateWithLifecycle()
     val buildings by viewModel.buildings.collectAsStateWithLifecycle()
     val combatUnits by viewModel.combatUnits.collectAsStateWithLifecycle()
@@ -194,13 +195,13 @@ fun MainAppContent(viewModel: GameViewModel) {
     if (offlineReport != null) {
         OfflineEarningsDialog(
             report = offlineReport!!,
-            isSubscribed = state!!.isSubscribed,
+            isSubscribed = state.isSubscribed,
             onDismiss = { viewModel.dismissOfflineEarnings() }
         )
     }
 
     // Guided Introduction Tutorial Dialog
-    if (state != null && !state!!.hasCompletedTutorial) {
+    if (!state.hasCompletedTutorial) {
         GameTutorialDialog(
             onDismiss = { viewModel.completeTutorial() }
         )
@@ -299,7 +300,7 @@ fun MainAppContent(viewModel: GameViewModel) {
                 TabContent(
                     tab = activeTab,
                     viewModel = viewModel,
-                    state = state!!,
+                    state = state,
                     resources = resources,
                     buildings = buildings,
                     combatUnits = combatUnits
@@ -384,7 +385,7 @@ fun MainAppContent(viewModel: GameViewModel) {
                 TabContent(
                     tab = activeTab,
                     viewModel = viewModel,
-                    state = state!!,
+                    state = state,
                     resources = resources,
                     buildings = buildings,
                     combatUnits = combatUnits
@@ -432,6 +433,13 @@ fun IndustryTab(
 ) {
     var showAutoSellDialog by remember { mutableStateOf(false) }
     var showProfileDialog by remember { mutableStateOf(false) }
+    var showMissionsDialog by remember { mutableStateOf(false) }
+    var showResearchersDialog by remember { mutableStateOf(false) }
+
+    val activeMissions by viewModel.activeMissions.collectAsStateWithLifecycle()
+    val scientists by viewModel.researchers.collectAsStateWithLifecycle()
+    val prices by viewModel.marketPrices.collectAsStateWithLifecycle()
+    val currentMultiplier by viewModel.upgradeMultiplier.collectAsStateWithLifecycle()
 
     if (showProfileDialog) {
         ProfileDialog(viewModel = viewModel, onDismiss = { showProfileDialog = false })
@@ -501,6 +509,47 @@ fun IndustryTab(
         }
 
         item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "Quartel de Comando de Patente 🏆",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = SolarGold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { showMissionsDialog = true },
+                            modifier = Modifier.weight(1f).testTag("btn_show_missions"),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Icon(Icons.Filled.Assignment, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Missões (${activeMissions.count { !it.isClaimed }})", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                        Button(
+                            onClick = { showResearchersDialog = true },
+                            modifier = Modifier.weight(1f).testTag("btn_show_researchers"),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                        ) {
+                            Icon(Icons.Filled.Science, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Cientistas", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
             Text(
                 text = "Recursos & Commodities",
                 style = MaterialTheme.typography.titleMedium,
@@ -545,8 +594,6 @@ fun IndustryTab(
         }
 
         item {
-            val currentMultiplier by viewModel.upgradeMultiplier.collectAsStateWithLifecycle()
-            
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -596,9 +643,7 @@ fun IndustryTab(
             }
         } else {
             items(buildings) { building ->
-                val prices by viewModel.marketPrices.collectAsStateWithLifecycle()
                 val currentPrice = prices[building.resourceProduced] ?: 1.0
-                val currentMultiplier by viewModel.upgradeMultiplier.collectAsStateWithLifecycle()
                 BuildingProductionCard(
                     building = building,
                     currentCash = state.cash,
@@ -606,6 +651,8 @@ fun IndustryTab(
                     marketPrice = currentPrice,
                     hasAutoSellLicense = state.hasAutoSellLicense,
                     upgradeMultiplier = currentMultiplier,
+                    scientists = scientists,
+                    gameState = state,
                     onUpgrade = { viewModel.upgradeBuilding(building.id) },
                     onAutomate = { viewModel.automateBuildingWithGems(building.id) },
                     onProduce = { viewModel.produceManual(building.id) },
@@ -616,6 +663,1142 @@ fun IndustryTab(
                             viewModel.toggleAutoSelling(building.id, active)
                         }
                     }
+                )
+            }
+        }
+    }
+
+    if (showMissionsDialog) {
+        MissionsDialog(
+            viewModel = viewModel,
+            state = state,
+            missions = activeMissions,
+            onDismiss = { showMissionsDialog = false }
+        )
+    }
+
+    if (showResearchersDialog) {
+        ResearchersLabDialog(
+            viewModel = viewModel,
+            state = state,
+            scientists = scientists,
+            onDismiss = { showResearchersDialog = false }
+        )
+    }
+}
+
+@Composable
+fun MissionsDialog(
+    viewModel: GameViewModel,
+    state: GameState,
+    missions: List<ActiveMission>,
+    onDismiss: () -> Unit
+) {
+    var rewardScience by remember { mutableStateOf<Long?>(null) }
+    var rewardGems by remember { mutableStateOf<Long?>(null) }
+    var rewardCapType by remember { mutableStateOf<String?>(null) }
+    var rewardCards by remember { mutableStateOf<List<String>>(emptyList()) }
+    var showCapsuleAlert by remember { mutableStateOf(false) }
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.88f),
+            shape = RoundedCornerShape(16.dp),
+            color = CosmicDark,
+            border = BorderStroke(1.dp, CosmicBorder)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.MilitaryTech, contentDescription = null, tint = SolarGold, modifier = Modifier.size(28.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Operações de Patente: Rank ${state.playerRank} 🎖️", fontWeight = FontWeight.Bold, color = SolarGold, fontSize = 20.sp)
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Progresso da Patente", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = TextWhite)
+                                Text("${state.completedRankMissions}/3 Missões", fontWeight = FontWeight.ExtraBold, color = SolarGold)
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            LinearProgressIndicator(
+                                progress = (state.completedRankMissions / 3f).coerceIn(0f, 1f),
+                                modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
+                                color = SolarGold,
+                                trackColor = MaterialTheme.colorScheme.outlineVariant
+                            )
+                            
+                            if (state.completedRankMissions >= 3) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Button(
+                                    onClick = {
+                                        viewModel.rankUpPlayer(
+                                            onSuccess = { nextRank, science, cards ->
+                                                rewardScience = science
+                                                rewardGems = 50L + nextRank * 10L
+                                                rewardCapType = "REPROMOÇÃO SUPREMA"
+                                                rewardCards = cards
+                                                showCapsuleAlert = true
+                                            }
+                                        )
+                                    },
+                                    modifier = Modifier.fillMaxWidth().testTag("btn_rank_up"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = SolarGold, contentColor = Color.Black)
+                                ) {
+                                    Text("SUBIR DE PATENTE! 🎖️", fontWeight = FontWeight.Black, fontSize = 14.sp)
+                                }
+                            } else {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    "Complete as 3 missões para desbloquear sua promoção de patente e receber uma Super Cápsula de Cientistas!",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextMuted
+                                )
+                            }
+                        }
+                    }
+
+                    Text("Lista de Missões Ativas:", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
+
+                    if (missions.isEmpty()) {
+                        Text("Nenhuma missão ativa carregada.", color = TextMuted)
+                    }
+
+                    missions.forEach { m ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            border = BorderStroke(1.dp, if (m.isCompleted && !m.isClaimed) SolarGold else Color.Transparent),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(m.description, fontWeight = FontWeight.Bold, color = TextWhite)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            "Recompensas: +${m.rewardGems} 💎 | +${m.rewardScience} 🧪 | Cápsula ${m.rewardCapsuleType}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = SolarGold
+                                        )
+                                    }
+                                    if (m.isClaimed) {
+                                        Icon(Icons.Filled.CheckCircle, contentDescription = "Completo", tint = Color.Green, modifier = Modifier.size(24.dp))
+                                    } else if (m.isCompleted) {
+                                        Button(
+                                            onClick = {
+                                                viewModel.claimMissionReward(m.id, onSuccess = { gems, science, capType, cards ->
+                                                    rewardGems = gems
+                                                    rewardScience = science
+                                                    rewardCapType = capType
+                                                    rewardCards = cards
+                                                    showCapsuleAlert = true
+                                                })
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color.Green, contentColor = Color.Black),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                        ) {
+                                            Text("REIVINDICAR", fontSize = 10.sp, fontWeight = FontWeight.Black)
+                                        }
+                                    } else {
+                                        Icon(Icons.Filled.HourglassEmpty, contentDescription = "Andamento", tint = TextMuted, modifier = Modifier.size(20.dp))
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                val ratio = (m.progress / m.target).toFloat().coerceIn(0f, 1f)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    LinearProgressIndicator(
+                                        progress = ratio,
+                                        modifier = Modifier.weight(1f).height(6.dp).clip(CircleShape),
+                                        color = if (m.isCompleted) Color.Green else MaterialTheme.colorScheme.primary,
+                                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = "${formatMissionProgress(m.progress)} / ${formatMissionProgress(m.target)}",
+                                        fontSize = 11.sp,
+                                        color = if (m.isCompleted) Color.Green else TextWhite,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    Button(onClick = onDismiss) {
+                        Text("Fechar")
+                    }
+                }
+            }
+        }
+    }
+
+    if (showCapsuleAlert) {
+        AlertDialog(
+            onDismissRequest = { showCapsuleAlert = false },
+            title = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                    Text("🎁 CÁPSULA ABERTA! 🎁", fontWeight = FontWeight.Black, color = SolarGold, fontSize = 22.sp)
+                    Text("Tipo: Cápsula $rewardCapType", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("Você coletou suprimentos incríveis!", fontWeight = FontWeight.Bold, color = TextWhite)
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("🧪 +${rewardScience ?: 0}", fontWeight = FontWeight.Black, color = SolarGold, fontSize = 16.sp)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("💎 +${rewardGems ?: 0}", fontWeight = FontWeight.Black, color = Color(0xFF03A9F4), fontSize = 16.sp)
+                        }
+                    }
+                    Divider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Text("CARTAS CIENTÍFICAS OBTIDAS:", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    if (rewardCards.isEmpty()) {
+                        Text("(Nenhuma carta nova, apenas recursos)", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                    } else {
+                        rewardCards.forEach { card ->
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(4.dp)).padding(6.dp)) {
+                                Icon(Icons.Filled.CardMembership, contentDescription = null, tint = SolarGold, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(card, fontWeight = FontWeight.Bold, color = TextWhite, fontSize = 13.sp)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showCapsuleAlert = false }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+}
+
+fun formatMissionProgress(value: Double): String {
+    return when {
+        value >= 1_000_000_000_000.0 -> String.format("%.1f T", value / 1_000_000_000_000.0)
+        value >= 1_000_000_000.0 -> String.format("%.1f B", value / 1_000_000_000.0)
+        value >= 1_000_000.0 -> String.format("%.1f M", value / 1_000_000.0)
+        value >= 1_000.0 -> String.format("%.1f K", value / 1_000.0)
+        else -> String.format("%.0f", value)
+    }
+}
+
+@Composable
+fun ResearchersLabDialog(
+    viewModel: GameViewModel,
+    state: GameState,
+    scientists: List<ResearcherCard>,
+    onDismiss: () -> Unit
+) {
+    var shopScienceGain by remember { mutableStateOf<Long?>(null) }
+    var shopCardsObtained by remember { mutableStateOf<List<String>>(emptyList()) }
+    var shopCapType by remember { mutableStateOf("") }
+    var showShopAlert by remember { mutableStateOf(false) }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.88f),
+            shape = RoundedCornerShape(16.dp),
+            color = CosmicDark,
+            border = BorderStroke(1.dp, CosmicBorder)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.Science,
+                            contentDescription = null,
+                            tint = SolarGold,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Lab de Pesquisadores 🧪",
+                            fontWeight = FontWeight.Black,
+                            color = SolarGold,
+                            fontSize = 20.sp
+                        )
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Filled.Close, contentDescription = "Close", tint = TextMuted)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                // Accumulated Science Banner
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            color = Color.Black.copy(alpha = 0.4f),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .border(1.dp, CosmicBorder, RoundedCornerShape(12.dp))
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "CIÊNCIA DISPONÍVEL",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextMuted,
+                            letterSpacing = 1.sp
+                        )
+                        Text(
+                            text = "Tokens para Recrutamento & Upgrade",
+                            fontSize = 11.sp,
+                            color = TextWhite.copy(alpha = 0.7f)
+                        )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "${state.science} 🧪",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 22.sp,
+                            color = SolarGold
+                        )
+                    }
+                }
+
+                // Section: Capsules Store
+                Text(
+                    text = "LOJA DE CÁPSULAS DE SUPRIMENTOS",
+                    fontWeight = FontWeight.Black,
+                    color = NeonCyan,
+                    fontSize = 12.sp,
+                    letterSpacing = 1.2.sp
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // CAPSULE 1: COMUM
+                    CapsuleShopItem(
+                        title = "Comum 🎁",
+                        cost = 50,
+                        imageResId = R.drawable.img_capsule_comum,
+                        glowColor = NeonCyan,
+                        onBuy = {
+                            viewModel.buyAndOpenCapsuleWithGems("COMUM", onSuccess = { sci, cards ->
+                                shopScienceGain = sci
+                                shopCardsObtained = cards
+                                shopCapType = "COMUM"
+                                showShopAlert = true
+                            }, onError = { err ->
+                                errorMsg = err
+                            })
+                        }
+                    )
+
+                    // CAPSULE 2: ÉPICA
+                    CapsuleShopItem(
+                        title = "Épica ⭐",
+                        cost = 150,
+                        imageResId = R.drawable.img_capsule_epica,
+                        glowColor = NeonMagenta,
+                        onBuy = {
+                            viewModel.buyAndOpenCapsuleWithGems("EPICA", onSuccess = { sci, cards ->
+                                shopScienceGain = sci
+                                shopCardsObtained = cards
+                                shopCapType = "ÉPICA"
+                                showShopAlert = true
+                            }, onError = { err ->
+                                errorMsg = err
+                            })
+                        }
+                    )
+
+                    // CAPSULE 3: SUPREMA
+                    CapsuleShopItem(
+                        title = "Suprema 👑",
+                        cost = 400,
+                        imageResId = R.drawable.img_capsule_suprema,
+                        glowColor = SolarGold,
+                        onBuy = {
+                            viewModel.buyAndOpenCapsuleWithGems("SUPREMA", onSuccess = { sci, cards ->
+                                shopScienceGain = sci
+                                shopCardsObtained = cards
+                                shopCapType = "SUPREMA"
+                                showShopAlert = true
+                            }, onError = { err ->
+                                errorMsg = err
+                            })
+                        }
+                    )
+                }
+
+                // Section: Science Upgrades
+                Text(
+                    text = "TECNOLOGIAS E MELHORIAS LAB (PASSIVO)",
+                    fontWeight = FontWeight.Black,
+                    color = SolarGold,
+                    fontSize = 12.sp,
+                    letterSpacing = 1.2.sp
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // UPGRADE 1: PROD
+                    val prodLevel = state.scienceProdLevel
+                    val prodCost = (100 * 1.5.pow(prodLevel.toDouble())).toLong()
+                    val canBuyProd = state.science >= prodCost
+                    ScienceUpgradeItem(
+                        title = "Otimização Quântica",
+                        description = "Velocidade/Produção global",
+                        boostText = "+${prodLevel * 15}%",
+                        nextBoostText = "+15%",
+                        cost = prodCost,
+                        level = prodLevel,
+                        themeColor = NeonCyan,
+                        canBuy = canBuyProd,
+                        onUpgrade = {
+                            viewModel.purchaseScienceUpgrade("PROD", onSuccess = {}, onError = { errorMsg = it })
+                        }
+                    )
+
+                    // UPGRADE 2: CREDITS
+                    val creditsLevel = state.scienceCreditsLevel
+                    val creditsCost = (150 * 1.6.pow(creditsLevel.toDouble())).toLong()
+                    val canBuyCredits = state.science >= creditsCost
+                    ScienceUpgradeItem(
+                        title = "Reatores de Fusão",
+                        description = "Mais Créditos (C$) ganhos",
+                        boostText = "+${creditsLevel * 10}%",
+                        nextBoostText = "+10%",
+                        cost = creditsCost,
+                        level = creditsLevel,
+                        themeColor = SolarGold,
+                        canBuy = canBuyCredits,
+                        onUpgrade = {
+                            viewModel.purchaseScienceUpgrade("CREDITS", onSuccess = {}, onError = { errorMsg = it })
+                        }
+                    )
+
+                    // UPGRADE 3: COMRADE
+                    val comradeLevel = state.scienceComradeLevel
+                    val comradeCost = (80 * 1.5.pow(comradeLevel.toDouble())).toLong()
+                    val canBuyComrade = state.science >= comradeCost
+                    ScienceUpgradeItem(
+                        title = "Sensores Interestelares",
+                        description = "Comrades por segundo",
+                        boostText = "+${comradeLevel * 20}%",
+                        nextBoostText = "+20%",
+                        cost = comradeCost,
+                        level = comradeLevel,
+                        themeColor = NeonMagenta,
+                        canBuy = canBuyComrade,
+                        onUpgrade = {
+                            viewModel.purchaseScienceUpgrade("COMRADE", onSuccess = {}, onError = { errorMsg = it })
+                        }
+                    )
+
+                    // UPGRADE 4: COMBAT
+                    val combatLevel = state.scienceCombatLevel
+                    val combatCost = (200 * 1.7.pow(combatLevel.toDouble())).toLong()
+                    val canBuyCombat = state.science >= combatCost
+                    ScienceUpgradeItem(
+                        title = "Liga de Titânio",
+                        description = "Dano/HP extra de Combate",
+                        boostText = "+${combatLevel * 15}%",
+                        nextBoostText = "+15%",
+                        cost = combatCost,
+                        level = combatLevel,
+                        themeColor = SuccessGreen,
+                        canBuy = canBuyCombat,
+                        onUpgrade = {
+                            viewModel.purchaseScienceUpgrade("COMBAT", onSuccess = {}, onError = { errorMsg = it })
+                        }
+                    )
+                }
+
+                // Section: Assigned Scientists
+                Text(
+                    text = "PESQUISADORES RECRUTADOS",
+                    fontWeight = FontWeight.Black,
+                    color = NeonCyan,
+                    fontSize = 12.sp,
+                    letterSpacing = 1.2.sp
+                )
+
+                if (scientists.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp)
+                            .background(CosmicCard, RoundedCornerShape(12.dp))
+                            .border(1.dp, CosmicBorder, RoundedCornerShape(12.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Filled.Help,
+                                contentDescription = null,
+                                tint = TextMuted,
+                                modifier = Modifier.size(32.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Nenhum pesquisador recrutado no momento.",
+                                color = TextMuted,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Abra cápsulas acima para extrair recursos!",
+                                color = TextMuted.copy(alpha = 0.7f),
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                } else {
+                    scientists.forEach { r ->
+                        ScientistDossierCard(
+                            r = r,
+                            currentScience = state.science,
+                            onUpgrade = {
+                                viewModel.upgradeResearcherCard(r.id, onSuccess = {}, onError = { err -> errorMsg = err })
+                            }
+                        )
+                    }
+                } // Closes else block
+            } // Closes Inner scrollable Column
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = SolarGold,
+                    contentColor = Color.Black
+                ),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+            ) {
+                Text("FECHAR", fontWeight = FontWeight.Black)
+            }
+        } // Closes Main Column
+    } // Closes Surface
+} // Closes Dialog
+
+    if (showShopAlert) {
+        AlertDialog(
+            onDismissRequest = { showShopAlert = false },
+            title = {
+                Text(
+                    text = "🚀 CÁPSULA REVELADA! 🚀",
+                    fontWeight = FontWeight.Black,
+                    color = SolarGold,
+                    fontSize = 18.sp,
+                    letterSpacing = 1.sp
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    val shopAsset = when (shopCapType.uppercase()) {
+                        "COMUM" -> R.drawable.img_capsule_comum
+                        "EPICA", "ÉPICA" -> R.drawable.img_capsule_epica
+                        "SUPREMA" -> R.drawable.img_capsule_suprema
+                        else -> R.drawable.img_capsule_comum
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(100.dp)
+                            .background(SolarGold.copy(alpha = 0.08f), CircleShape)
+                            .border(1.5.dp, SolarGold.copy(alpha = 0.3f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        SafeImage(
+                            resId = shopAsset,
+                            contentDescription = "Cápsula",
+                            modifier = Modifier.size(85.dp).clip(CircleShape),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            fallbackIcon = Icons.Filled.CardGiftcard,
+                            fallbackTint = SolarGold
+                        )
+                    }
+
+                    Text(
+                        text = "Suprimentos extraídos com sucesso para sua operação espacial:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextWhite.copy(alpha = 0.8f),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        fontSize = 12.sp
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .background(Color.Black.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                            .border(1.dp, CosmicBorder, RoundedCornerShape(10.dp))
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "+${shopScienceGain ?: 0} 🧪 Tokens de Ciência",
+                            fontWeight = FontWeight.Black,
+                            color = SolarGold,
+                            fontSize = 14.sp
+                        )
+                    }
+
+                    Text(
+                        text = "CARTAS DE PESQUISADORES:",
+                        fontWeight = FontWeight.Bold,
+                        color = NeonCyan,
+                        fontSize = 11.sp,
+                        letterSpacing = 0.8.sp
+                    )
+
+                    if (shopCardsObtained.isEmpty()) {
+                        Text(
+                            text = "(Nenhum cientista extra duplicado, mas a ciência soma!)",
+                            fontSize = 11.sp,
+                            color = TextMuted,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    } else {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            shopCardsObtained.forEach { card ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(
+                                            color = Color.White.copy(alpha = 0.03f),
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .border(1.dp, CosmicBorder, RoundedCornerShape(8.dp))
+                                        .padding(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.CardMembership,
+                                        contentDescription = null,
+                                        tint = SolarGold,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = card,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        color = TextWhite
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showShopAlert = false },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = SolarGold,
+                        contentColor = Color.Black
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                ) {
+                    Text(
+                        text = "ÓTIMO, RECOLHER! 🪐",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 12.sp
+                    )
+                }
+            },
+            containerColor = CosmicDark,
+            tonalElevation = 8.dp
+        )
+    }
+
+    if (errorMsg != null) {
+        AlertDialog(
+            onDismissRequest = { errorMsg = null },
+            title = { Text("Aviso de Sistema", fontWeight = FontWeight.Bold, color = Color.Red) },
+            text = { Text(errorMsg ?: "", color = TextWhite) },
+            confirmButton = {
+                Button(onClick = { errorMsg = null }) {
+                    Text("Entendido")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun SafeImage(
+    resId: Int,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.Fit,
+    fallbackIcon: ImageVector = Icons.Filled.CardGiftcard,
+    fallbackTint: Color = Color.Gray
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val hasValidResource = remember(resId) {
+        try {
+            val drawable = androidx.core.content.ContextCompat.getDrawable(context, resId)
+            drawable != null
+        } catch (e: Throwable) {
+            false
+        }
+    }
+
+    if (hasValidResource) {
+        Image(
+            painter = painterResource(id = resId),
+            contentDescription = contentDescription,
+            modifier = modifier,
+            contentScale = contentScale
+        )
+    } else {
+        Icon(
+            imageVector = fallbackIcon,
+            contentDescription = contentDescription,
+            tint = fallbackTint,
+            modifier = modifier
+        )
+    }
+}
+
+@Composable
+fun CapsuleShopItem(
+    title: String,
+    cost: Int,
+    imageResId: Int,
+    glowColor: Color,
+    onBuy: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .width(135.dp)
+            .border(
+                border = BorderStroke(1.dp, glowColor.copy(alpha = 0.3f)),
+                shape = RoundedCornerShape(16.dp)
+            ),
+        colors = CardDefaults.cardColors(containerColor = CosmicCard),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = title,
+                fontWeight = FontWeight.Black,
+                fontSize = 11.sp,
+                color = TextWhite,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .background(Color.Black.copy(alpha = 0.2f), CircleShape)
+                    .border(1.5.dp, glowColor.copy(alpha = 0.2f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                SafeImage(
+                    resId = imageResId,
+                    contentDescription = title,
+                    modifier = Modifier.size(72.dp).clip(CircleShape),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    fallbackIcon = Icons.Filled.CardGiftcard,
+                    fallbackTint = glowColor
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(10.dp))
+            
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = "Custo: ",
+                    fontSize = 10.sp,
+                    color = TextMuted
+                )
+                Text(
+                    text = "$cost 💎",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = SolarGold
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(10.dp))
+            
+            Button(
+                onClick = onBuy,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = glowColor,
+                    contentColor = if (glowColor == SolarGold) Color.Black else Color.White
+                ),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(32.dp)
+            ) {
+                Text(
+                    text = "ATIVAR",
+                    fontWeight = FontWeight.Black,
+                    fontSize = 9.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ScienceUpgradeItem(
+    title: String,
+    description: String,
+    boostText: String,
+    nextBoostText: String,
+    cost: Long,
+    level: Int,
+    themeColor: Color,
+    canBuy: Boolean,
+    onUpgrade: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .width(185.dp)
+            .height(160.dp)
+            .border(
+                border = BorderStroke(1.dp, themeColor.copy(alpha = 0.35f)),
+                shape = RoundedCornerShape(16.dp)
+            ).testTag("science_upgrade_${title.replace(" ", "_").lowercase()}"),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = CosmicCard)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp)
+        ) {
+            Text(
+                text = title,
+                fontWeight = FontWeight.Bold,
+                color = themeColor,
+                fontSize = 13.sp,
+                maxLines = 1
+            )
+            Text(
+                text = description,
+                color = TextMuted,
+                fontSize = 11.sp,
+                maxLines = 2,
+                modifier = Modifier.padding(vertical = 2.dp)
+            )
+            
+            Spacer(modifier = Modifier.height(4.dp))
+            
+            Text(
+                text = "Atual: $boostText",
+                color = TextWhite,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = "Level $level",
+                color = themeColor.copy(alpha = 0.82f),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            )
+            
+            Spacer(modifier = Modifier.weight(1f))
+            
+            Button(
+                onClick = onUpgrade,
+                enabled = canBuy,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = themeColor,
+                    contentColor = if (themeColor == SolarGold) Color.Black else Color.White,
+                    disabledContainerColor = themeColor.copy(alpha = 0.15f),
+                    disabledContentColor = TextMuted.copy(alpha = 0.4f)
+                ),
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(32.dp)
+            ) {
+                Text(
+                    text = "$cost 🧪",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ScientistDossierCard(
+    r: ResearcherCard,
+    currentScience: Long,
+    onUpgrade: () -> Unit
+) {
+    val rColor = when (r.rarity) {
+        "COMMON" -> Color(0xFF90A4AE)
+        "RARE" -> Color(0xFF2196F3)
+        "EPIC" -> Color(0xFF9C27B0)
+        "SUPREME" -> Color(0xFFFFD700)
+        else -> Color.White
+    }
+
+    val rarityName = when (r.rarity) {
+        "COMMON" -> "COMUM"
+        "RARE" -> "RARO"
+        "EPIC" -> "ÉPICO"
+        "SUPREME" -> "SUPREMO"
+        else -> r.rarity
+    }
+
+    val sciImage = when (r.id) {
+        1 -> R.drawable.img_sci_elon
+        2 -> R.drawable.img_sci_curie
+        3 -> R.drawable.img_sci_ada
+        4 -> R.drawable.img_sci_albert
+        5 -> R.drawable.img_sci_karl
+        6 -> R.drawable.img_sci_nebula
+        else -> R.drawable.img_scientist_card
+    }
+
+    val glowBrush = Brush.linearGradient(
+        colors = listOf(
+            rColor.copy(alpha = 0.8f),
+            rColor.copy(alpha = 0.1f),
+            rColor.copy(alpha = 0.7f)
+        )
+    )
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                border = BorderStroke(1.2.dp, glowBrush),
+                shape = RoundedCornerShape(16.dp)
+            ),
+        colors = CardDefaults.cardColors(containerColor = CosmicCard)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Scientist Artwork (Left)
+                Box(
+                    modifier = Modifier
+                        .size(65.dp)
+                        .background(rColor.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
+                        .border(1.5.dp, rColor.copy(alpha = 0.4f), RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    SafeImage(
+                        resId = sciImage,
+                        contentDescription = r.name,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(12.dp)),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        fallbackIcon = Icons.Filled.Person,
+                        fallbackTint = rColor
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Mid Text info: Name, Rarity, Level
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = r.name,
+                            fontWeight = FontWeight.Black,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = TextWhite,
+                            fontSize = 15.sp
+                        )
+                        Box(
+                            modifier = Modifier
+                                .background(rColor.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = rarityName,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = rColor
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(2.dp))
+                    
+                    Text(
+                        text = if (r.level == 0) "Não Recrutado" else "Nível ${r.level}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (r.level > 0) SuccessGreen else TextMuted,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    )
+                }
+                
+                // Upgrade action button on far right
+                val canUpgrade = r.cardsCollected >= r.cardsNeededToUpgrade && currentScience >= r.getUpgradeScienceCost()
+                Button(
+                    onClick = onUpgrade,
+                    enabled = canUpgrade,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (canUpgrade) rColor else Color.White.copy(alpha = 0.04f),
+                        contentColor = if (canUpgrade) (if (rColor == SolarGold) Color.Black else Color.White) else TextMuted.copy(alpha = 0.6f)
+                    ),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.height(34.dp)
+                ) {
+                    Text(
+                        text = "${r.getUpgradeScienceCost()} 🧪",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(10.dp))
+            
+            // Description of effect
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                    .padding(8.dp)
+            ) {
+                Text(
+                    text = r.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextWhite.copy(alpha = 0.85f),
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(10.dp))
+            
+            // Cards collected Progress row
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val barRatio = if (r.cardsNeededToUpgrade > 0) {
+                    (r.cardsCollected.toFloat() / r.cardsNeededToUpgrade.toFloat()).coerceAtMost(1f)
+                } else 1f
+                
+                LinearProgressIndicator(
+                    progress = barRatio,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(6.dp)
+                        .clip(CircleShape),
+                    color = rColor,
+                    trackColor = Color.White.copy(alpha = 0.1f)
+                )
+                
+                Text(
+                    text = "${r.cardsCollected} / ${r.cardsNeededToUpgrade}",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (r.cardsCollected >= r.cardsNeededToUpgrade) SuccessGreen else TextWhite
                 )
             }
         }
@@ -701,13 +1884,23 @@ fun HeaderDashboardCard(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Text(
-                        text = "Setor Estelar: ${state.guildName}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextWhite.copy(alpha = 0.82f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Patente ${state.playerRank} 🎖️",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = SolarGold,
+                            maxLines = 1
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "|  Setor: ${state.guildName}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextWhite.copy(alpha = 0.82f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
                 
                 IconButton(
@@ -774,16 +1967,46 @@ fun HeaderDashboardCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Other in-game currency indicators
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                CurrencyBadge(icon = Icons.Filled.Stars, label = "${state.starGems}", text = "Gemas")
-                CurrencyBadge(icon = Icons.Filled.ChangeCircle, label = "${state.nebulaCores}", text = "Star Cores")
-                CurrencyBadge(icon = Icons.Filled.Group, label = "${state.guildTokens}", text = "Aliança")
+            // Other in-game currency indicators - Grid representation
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        CurrencyBadge(icon = Icons.Filled.Stars, label = "${state.starGems} 💎", text = "Gemas")
+                    }
+                    Box(modifier = Modifier.weight(1f)) {
+                        CurrencyBadge(icon = Icons.Filled.Science, label = "${state.science} 🧪", text = "Ciência")
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(modifier = Modifier.weight(1.2f)) {
+                        CurrencyBadge(
+                            icon = Icons.Filled.Group,
+                            label = "${formatComrades(state.comrades)} 👥 (+${String.format("%.1f", state.comradesPerSec)}/s)",
+                            text = "Operários"
+                        )
+                    }
+                    Box(modifier = Modifier.weight(1f)) {
+                        CurrencyBadge(icon = Icons.Filled.ChangeCircle, label = "${state.nebulaCores} Cores", text = "Star Cores")
+                    }
+                }
             }
         }
+    }
+}
+
+fun formatComrades(amount: Double): String {
+    return when {
+        amount >= 1_000_000_000_000.0 -> String.format("%.2f T", amount / 1_000_000_000_000.0)
+        amount >= 1_000_000_000.0 -> String.format("%.2f B", amount / 1_000_000_000.0)
+        amount >= 1_000_000.0 -> String.format("%.2f M", amount / 1_000_000.0)
+        amount >= 1_000.0 -> String.format("%.2f K", amount / 1_000.0)
+        else -> String.format("%d", amount.toInt())
     }
 }
 
@@ -870,19 +2093,45 @@ fun BuildingProductionCard(
     marketPrice: Double,
     hasAutoSellLicense: Boolean,
     upgradeMultiplier: String,
+    scientists: List<ResearcherCard>,
+    gameState: GameState? = null,
     onUpgrade: () -> Unit,
     onAutomate: () -> Unit,
     onProduce: () -> Unit,
     onToggleAutoSell: (Boolean) -> Unit
 ) {
+    val costCard = scientists.find { it.targetBuildingId == building.id && it.boostType == "COST_REDUCTION" }
+    val costReductionRate = if (costCard != null && costCard.level > 0) costCard.getBoostValue() else 0.0
+    val costMultiplierFactor = (1.0 - costReductionRate).coerceIn(0.2, 1.0)
+    val discountedBaseCost = building.baseCost * costMultiplierFactor
+
     val (levelsGained, cost) = calculateMultiUpgrade(
-        building.baseCost,
+        discountedBaseCost,
         building.costMultiplier,
         building.level,
         currentCash,
         upgradeMultiplier
     )
-    val runsRate = building.getActualProductionRate()
+    
+    // --- Scientist/Researcher multipliers ---
+    // a) Global supreme boost (ID 6)
+    val globalSupremeCard = scientists.find { it.id == 6 }
+    val globalSupremeMulti = 1.0 + (if (globalSupremeCard != null && globalSupremeCard.level > 0) globalSupremeCard.getBoostValue() else 0.0)
+    
+    // b) Local production boost (target ID matches building)
+    val localProdCard = scientists.find { it.targetBuildingId == building.id && it.boostType == "PRODUCTION" }
+    val localProdMulti = 1.0 + (if (localProdCard != null && localProdCard.level > 0) localProdCard.getBoostValue() else 0.0)
+    
+    // c) Local speed boost (speeding up turns = more output)
+    val localSpeedCard = scientists.find { it.targetBuildingId == building.id && it.boostType == "SPEED" }
+    val localSpeedMulti = 1.0 + (if (localSpeedCard != null && localSpeedCard.level > 0) localSpeedCard.getBoostValue() else 0.0)
+
+    val scienceProdMulti = 1.0 + ((gameState?.scienceProdLevel ?: 0) * 0.15)
+    val prestigeBonus = 1.0 + ((gameState?.nebulaCores ?: 0L) * 0.10)
+    val energyFactor = (if (gameState?.isSubscribed == true) 1.5 else 1.0) * prestigeBonus
+    
+    val totalMultiplier = energyFactor * scienceProdMulti * globalSupremeMulti * localProdMulti * localSpeedMulti
+    val runsRate = building.getActualProductionRate() * totalMultiplier
     val isLocked = building.level == 0
 
     // High-fidelity animation loop for spinning/pulsating building gears
@@ -3204,7 +4453,7 @@ fun GameTutorialDialog(
     onDismiss: () -> Unit
 ) {
     var currentSlide by remember { mutableStateOf(0) }
-    val totalSlides = 6
+    val totalSlides = 7
 
     val slides = listOf(
         TutorialSlide(
@@ -3215,8 +4464,14 @@ fun GameTutorialDialog(
         ),
         TutorialSlide(
             title = "Indústria & Fábricas 🏭",
-            description = "No menu Indústria, ative e aprimore prédios sofisticados como Usinas de Energia, Mineração de Ferro e Chips Quânticos. Fique de olho nos consumos estratégicos de matéria-prima e conquiste marcos industriais (Nível 10, 25, 50, etc.) que duplicam e multiplicam a eficiência da produção global!",
+            description = "Ative e aprimore prédios sofisticados como Usinas de Energia, Mineração de Ferro e Chips Quânticos. Esqueça os Operários para aprimorar: agora, os upgrades de indústrias custam APENAS Créditos galácticos! Fique de olho no consumo de matéria-prima e atinja marcos de nível (10, 25, 50, etc.) que multiplicam a sua eficiência!",
             icon = Icons.Filled.Business,
+            tint = NeonCyan
+        ),
+        TutorialSlide(
+            title = "Cientistas & Operários 👥",
+            description = "Recrute Cientistas renomados (como Karl Mark-IV) na aba de Pesquisa usando cartões obtidos de Cápsulas! Eles concedem bônus de produção astronômicos e reduzem drasticamente custos de indústrias. Seus Operários (Camaradas) agora acumulam de forma passiva constante, representando o prestígio e a força de trabalho definitiva de seu império interestelar!",
+            icon = Icons.Filled.Group,
             tint = NeonCyan
         ),
         TutorialSlide(
@@ -3271,7 +4526,7 @@ fun GameTutorialDialog(
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 LinearProgressIndicator(
-                    progress = { (currentSlide + 1) / totalSlides.toFloat() },
+                    progress = (currentSlide + 1) / totalSlides.toFloat(),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(6.dp)
@@ -3433,13 +4688,24 @@ fun calculateMultiUpgrade(
 
     if (nLimit > 0) {
         val r = costMultiplier
-        val addCost = if (kotlin.math.abs(r - 1.0) < 1e-9) {
+        var addCost = if (kotlin.math.abs(r - 1.0) < 1e-9) {
             baseCost * r.pow(currentL.toDouble()) * nLimit
         } else {
             baseCost * r.pow(currentL.toDouble()) * (r.pow(nLimit.toDouble()) - 1.0) / (r - 1.0)
         }
+
+        var currentLimit = nLimit
+        while (currentLimit > 0 && addCost > remainingCash) {
+            currentLimit--
+            addCost = if (kotlin.math.abs(r - 1.0) < 1e-9) {
+                baseCost * r.pow(currentL.toDouble()) * currentLimit
+            } else {
+                baseCost * r.pow(currentL.toDouble()) * (r.pow(currentLimit.toDouble()) - 1.0) / (r - 1.0)
+            }
+        }
+
         totalCost += addCost
-        levelsGained += nLimit
+        levelsGained += currentLimit
     }
 
     if (levelsGained == 0) {

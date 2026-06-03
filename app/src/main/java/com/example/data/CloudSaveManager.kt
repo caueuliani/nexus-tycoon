@@ -57,7 +57,7 @@ class CloudSaveManager(private val context: Context) {
             val aId = _customAppId.value
 
             val apps = FirebaseApp.getApps(context)
-            if (apps.isEmpty()) {
+            val app = if (apps.isEmpty()) {
                 val options = FirebaseOptions.Builder()
                     .setApplicationId(aId)
                     .setApiKey(aKey)
@@ -65,21 +65,10 @@ class CloudSaveManager(private val context: Context) {
                     .build()
                 FirebaseApp.initializeApp(context, options)
             } else {
-                for (app in apps) {
-                    if (app.name == FirebaseApp.DEFAULT_APP_NAME) {
-                        app.delete()
-                        break
-                    }
-                }
-                val options = FirebaseOptions.Builder()
-                    .setApplicationId(aId)
-                    .setApiKey(aKey)
-                    .setProjectId(pId)
-                    .build()
-                FirebaseApp.initializeApp(context, options)
+                FirebaseApp.getInstance()
             }
-            auth = FirebaseAuth.getInstance()
-            db = FirebaseFirestore.getInstance()
+            auth = FirebaseAuth.getInstance(app)
+            db = FirebaseFirestore.getInstance(app)
             firebaseInitialized = true
             _isSandboxMode.value = false // Successfully bound real Firebase
             addLog("Firebase Inicializado (Projeto: $pId).")
@@ -162,6 +151,11 @@ class CloudSaveManager(private val context: Context) {
                 "stage3CompletedCount" to state.stage3CompletedCount,
                 "stage4CompletedCount" to state.stage4CompletedCount,
                 "hasCompletedTutorial" to state.hasCompletedTutorial,
+                "comrades" to state.comrades,
+                "comradesPerSec" to state.comradesPerSec,
+                "playerRank" to state.playerRank,
+                "completedRankMissions" to state.completedRankMissions,
+                "science" to state.science,
                 "lastSavedTime" to System.currentTimeMillis(),
                 
                 "resources" to resourcesList.map { r -> mapOf("name" to r.name, "quantity" to r.quantity) },
@@ -291,6 +285,11 @@ class CloudSaveManager(private val context: Context) {
             stage3CompletedCount = (payload["stage3CompletedCount"] as? Number)?.toInt() ?: 0,
             stage4CompletedCount = (payload["stage4CompletedCount"] as? Number)?.toInt() ?: 0,
             hasCompletedTutorial = payload["hasCompletedTutorial"] as? Boolean ?: false,
+            comrades = (payload["comrades"] as? Number)?.toDouble() ?: 0.0,
+            comradesPerSec = (payload["comradesPerSec"] as? Number)?.toDouble() ?: 1.0,
+            playerRank = (payload["playerRank"] as? Number)?.toInt() ?: 1,
+            completedRankMissions = (payload["completedRankMissions"] as? Number)?.toInt() ?: 0,
+            science = (payload["science"] as? Number)?.toLong() ?: 100L,
             lastSavedTime = System.currentTimeMillis()
         )
 
