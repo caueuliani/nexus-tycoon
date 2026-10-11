@@ -72,3 +72,7 @@ Backups v3 incluem saldo, níveis e resgates dos três eventos atuais. Backups v
 `StellarLabTest` cobre migração/reabertura, transações concorrentes, concessões, preços compartilhados, persistência no backup e ganhos offline. Não substitui validação visual ou execução em aparelho.
 
 Validação desta implementação (10/10/2026): assembleDebug, testDebugUnitTest e lintDebug concluídos. 32 testes passaram (6 em StellarLabTest), sem falhas. Lint: 0 erros e 77 avisos. Não houve execução em aparelho; continuam pendentes a conferência visual e o teste de atualização/backup no dispositivo real.
+
+## Mineração hostil
+
+O rebalanceamento de créditos/diamantes e sua comparação com custos e indústria estão em [docs/combat-balance.md](docs/combat-balance.md). Room 11 acrescenta registros locais de batalha com migração 10 → 11, preservando o Laboratório Estelar. Recompensas são fixadas no início e pagas uma única vez em transação. O formato de backup de progresso continua v3, aceitando v2.

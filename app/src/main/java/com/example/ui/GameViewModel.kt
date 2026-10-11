@@ -503,55 +503,58 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     val liveCombatStats = MutableStateFlow<ActiveBattleState?>(null)
 
     // User triggers Combat Mission Stage
+    private var battleJob: kotlinx.coroutines.Job? = null
+
     fun startCombatBattle(stageId: Int) {
+        if (_combatActive.value) return
         val stage = combatStages.find { it.id == stageId } ?: return
-        val state = gameState.value ?: com.example.data.GameState()
-        val completedCount = when (stageId) {
-            1 -> state.stage1CompletedCount
-            2 -> state.stage2CompletedCount
-            3 -> state.stage3CompletedCount
-            4 -> state.stage4CompletedCount
-            else -> 0
-        }
-
-        val scaleHp = 1.0 + 0.15 * completedCount
-        val scaleDmg = 1.0 + 0.12 * completedCount
-        val scaledEnemyHp = (stage.enemyHp * scaleHp).toInt()
-        val scaledEnemyDmg = (stage.enemyDmg * scaleDmg).toInt()
-
-        val scienceCombatMulti = 1.0 + (state.scienceCombatLevel * 0.15)
-        val units = combatUnits.value
-        val totalHealth = (units.sumOf { it.health } * scienceCombatMulti).toInt()
-        val totalAttack = (units.sumOf { it.attack } * scienceCombatMulti).toInt()
-
-        if (totalHealth == 0) {
-            _combatLogs.value = listOf("Deploy error: Hire units in barracks first.")
-            return
-        }
-
-        _selectedStage.value = stageId
         _combatActive.value = true
-        _combatLogs.value = listOf(
-            "INITIATING MISSION: ${stage.name} (Nível de Ameaça: ${completedCount + 1})...",
-            "Deploying Security squad... Total HP: $totalHealth, Attack Power: $totalAttack",
-            "Enemy threat spotted: Raider Vanguard HP: $scaledEnemyHp, Power: $scaledEnemyDmg"
-        )
+        battleJob = viewModelScope.launch {
+            val ticket = repository.beginCombat(stageId)
+            if (ticket == null) { _combatActive.value = false; return@launch }
+            val state = repository.getGameStateDirect() ?: return@launch
+            val completedCount = ticket.enemyLevel - 1
 
-        val battleState = ActiveBattleState(
-            stageId = stageId,
-            allyHp = totalHealth,
-            allyMaxHp = totalHealth,
-            allyDmg = totalAttack,
-            enemyHp = scaledEnemyHp,
-            enemyMaxHp = scaledEnemyHp,
-            enemyDmg = scaledEnemyDmg,
-            round = 1,
-            isShieldActive = false
-        )
-        liveCombatStats.value = battleState
-        _combatStatus.value = CombatStatus.Running
+            val scaleHp = 1.0 + 0.15 * completedCount
+            val scaleDmg = 1.0 + 0.12 * completedCount
+            val scaledEnemyHp = (stage.enemyHp * scaleHp).toInt()
+            val scaledEnemyDmg = (stage.enemyDmg * scaleDmg).toInt()
 
-        viewModelScope.launch {
+            val scienceCombatMulti = 1.0 + (state.scienceCombatLevel * 0.15)
+            val units = repository.getCombatUnitsDirect()
+            val totalHealth = (units.sumOf { it.health } * scienceCombatMulti).toInt()
+            val totalAttack = (units.sumOf { it.attack } * scienceCombatMulti).toInt()
+
+            if (totalHealth == 0) {
+                _combatLogs.value = listOf("Deploy error: Hire units in barracks first.")
+                repository.completeCombat(ticket.id, false)
+                _combatActive.value = false
+                return@launch
+            }
+
+            _selectedStage.value = stageId
+            _combatActive.value = true
+            _combatLogs.value = listOf(
+                "INITIATING MISSION: ${stage.name} (Nível de Ameaça: ${completedCount + 1})...",
+                "Deploying Security squad... Total HP: $totalHealth, Attack Power: $totalAttack",
+                "Enemy threat spotted: Raider Vanguard HP: $scaledEnemyHp, Power: $scaledEnemyDmg"
+            )
+
+            val battleState = ActiveBattleState(
+                battle = ticket,
+                stageId = stageId,
+                allyHp = totalHealth,
+                allyMaxHp = totalHealth,
+                allyDmg = totalAttack,
+                enemyHp = scaledEnemyHp,
+                enemyMaxHp = scaledEnemyHp,
+                enemyDmg = scaledEnemyDmg,
+                round = 1,
+                isShieldActive = false
+            )
+            liveCombatStats.value = battleState
+            _combatStatus.value = CombatStatus.Running
+
             runBattleLoop(battleState)
         }
     }
@@ -560,6 +563,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         var current = state
         while (current.allyHp > 0 && current.enemyHp > 0 && _combatActive.value) {
             delay(1500) // combat round speed
+            if (!_combatActive.value || _combatStatus.value != CombatStatus.Running || liveCombatStats.value?.battle?.id != state.battle.id) return
             val roundLogs = mutableListOf<String>()
             
             // Player attacks Enemy
@@ -573,7 +577,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 _combatLogs.update { it + roundLogs }
                 current = current.copy(enemyHp = 0, round = current.round + 1)
                 liveCombatStats.value = current
-                handleBattleVictory(current.stageId)
+                handleBattleVictory(current.battle)
                 break
             }
 
@@ -594,6 +598,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 _combatLogs.update { it + roundLogs }
                 current = current.copy(allyHp = 0, round = current.round + 1)
                 liveCombatStats.value = current
+                repository.completeCombat(current.battle.id, false)
                 _combatStatus.value = CombatStatus.Defeated
                 saveCombatReplay(current, victory = false)
                 break
@@ -633,7 +638,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
         if (nextEnemyHp <= 0) {
             viewModelScope.launch {
-                handleBattleVictory(current.stageId)
+                handleBattleVictory(current.battle)
             }
         }
     }
@@ -649,40 +654,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _combatLogs.update { it + "► Tactical Action: NANITE AUTO-REPAIR SYSTEM. Restored $healAmt HP!" }
     }
 
-    private suspend fun handleBattleVictory(stageId: Int) {
-        val stage = combatStages.find { it.id == stageId } ?: return
-        val state = gameState.value ?: return
+    private suspend fun handleBattleVictory(battle: CombatBattle) {
+        val reward = repository.completeCombat(battle.id, true) ?: return
+        if (liveCombatStats.value?.battle?.id != battle.id) return
+        _combatStatus.value = CombatStatus.Victory(reward.credits, reward.diamonds, reward.guildTokens)
 
-        val completedCount = when (stageId) {
-            1 -> state.stage1CompletedCount
-            2 -> state.stage2CompletedCount
-            3 -> state.stage3CompletedCount
-            4 -> state.stage4CompletedCount
-            else -> 0
-        }
-
-        val scaleCash = 1.0 + 0.06 * completedCount
-        val scaleGems = 1.0 + 0.05 * completedCount
-        val scaleTokens = 1.0 + 0.05 * completedCount
-
-        val lootCash = (stageId * 2500.0) * scaleCash
-        val lootGems = ((stageId * 20L) * scaleGems).toLong()
-        val lootTokens = ((stageId * 5L) * scaleTokens).toLong()
-        
-        val nextState = state.copy(
-            cash = state.cash + lootCash,
-            starGems = state.starGems + lootGems,
-            guildTokens = state.guildTokens + lootTokens,
-            highestCombatStage = max(state.highestCombatStage, stageId + 1),
-            stage1CompletedCount = if (stageId == 1) state.stage1CompletedCount + 1 else state.stage1CompletedCount,
-            stage2CompletedCount = if (stageId == 2) state.stage2CompletedCount + 1 else state.stage2CompletedCount,
-            stage3CompletedCount = if (stageId == 3) state.stage3CompletedCount + 1 else state.stage3CompletedCount,
-            stage4CompletedCount = if (stageId == 4) state.stage4CompletedCount + 1 else state.stage4CompletedCount
-        )
-        repository.saveGameState(nextState)
-
-        _combatStatus.value = CombatStatus.Victory(lootCash, lootGems, lootTokens)
-        
         // Save the replay details
         val finalState = liveCombatStats.value
         if (finalState != null) {
@@ -720,6 +696,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeBattle() {
+        battleJob?.cancel()
         _combatActive.value = false
         _combatStatus.value = CombatStatus.Idle
         liveCombatStats.value = null
@@ -1276,6 +1253,7 @@ data class CombatStage(
 )
 
 data class ActiveBattleState(
+    val battle: CombatBattle,
     val stageId: Int,
     val allyHp: Int,
     val allyMaxHp: Int,

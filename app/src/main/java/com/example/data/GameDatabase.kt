@@ -166,6 +166,14 @@ data class AdRewardReceipt(@PrimaryKey val token: String, val rewardedAt: Long)
 
 @Dao
 interface GameDao {
+    @Insert suspend fun insertBattle(battle: CombatBattle)
+    @Query("SELECT * FROM combat_battles WHERE id = :id")
+    suspend fun getBattle(id: String): CombatBattle?
+    @Query("UPDATE combat_battles SET status = :status WHERE id = :id")
+    suspend fun finishBattle(id: String, status: String)
+    @Query("UPDATE combat_battles SET status = 'abandoned' WHERE status = 'pending'")
+    suspend fun abandonBattles()
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAdReward(receipt: AdRewardReceipt): Long
 
@@ -270,13 +278,19 @@ interface GameDao {
         CombatUnit::class,
         ResearcherCard::class,
         ActiveMission::class,
+        CombatBattle::class,
         AdRewardReceipt::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 abstract class GameDatabase : RoomDatabase() {
     companion object {
+        val MIGRATION_10_11 = object : androidx.room.migration.Migration(10, 11) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS combat_battles (id TEXT NOT NULL, sector INTEGER NOT NULL, enemyLevel INTEGER NOT NULL, credits REAL NOT NULL, diamonds INTEGER NOT NULL, guildTokens INTEGER NOT NULL, status TEXT NOT NULL, PRIMARY KEY(id))")
+            }
+        }
         val MIGRATION_9_10 = object : androidx.room.migration.Migration(9, 10) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 listOf("availableCores", "industrialEngineeringLevel", "tacticalLogisticsLevel", "offlineReserveLevel").forEach {

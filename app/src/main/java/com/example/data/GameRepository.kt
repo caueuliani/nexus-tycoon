@@ -450,6 +450,37 @@ class GameRepository(private val db: GameDatabase) {
         return@withTransaction true
     }
 
+    suspend fun beginCombat(sector: Int): CombatBattle? = db.withTransaction {
+        val state = dao.getGameStateDirect() ?: return@withTransaction null
+        if (sector !in 1..4 || state.highestCombatStage < sector) return@withTransaction null
+        val level = Math.addExact(CombatRewards.victories(state, sector), 1)
+        val reward = CombatRewards.forLevel(sector, level)
+        dao.abandonBattles()
+        val battle = CombatBattle(java.util.UUID.randomUUID().toString(), sector, level,
+            reward.credits, reward.diamonds, reward.guildTokens)
+        dao.insertBattle(battle)
+        battle
+    }
+
+    suspend fun completeCombat(id: String, victory: Boolean): CombatReward? = db.withTransaction {
+        val battle = dao.getBattle(id) ?: return@withTransaction null
+        if (battle.status != "pending") return@withTransaction null
+        val state = dao.getGameStateDirect() ?: return@withTransaction null
+        dao.finishBattle(id, if (victory) "won" else "lost")
+        if (!victory) return@withTransaction null
+        dao.saveGameState(state.copy(
+            cash = state.cash + battle.credits,
+            starGems = Math.addExact(state.starGems, battle.diamonds),
+            guildTokens = Math.addExact(state.guildTokens, battle.guildTokens),
+            highestCombatStage = maxOf(state.highestCombatStage, battle.sector + 1),
+            stage1CompletedCount = if (battle.sector == 1) Math.addExact(state.stage1CompletedCount, 1) else state.stage1CompletedCount,
+            stage2CompletedCount = if (battle.sector == 2) Math.addExact(state.stage2CompletedCount, 1) else state.stage2CompletedCount,
+            stage3CompletedCount = if (battle.sector == 3) Math.addExact(state.stage3CompletedCount, 1) else state.stage3CompletedCount,
+            stage4CompletedCount = if (battle.sector == 4) Math.addExact(state.stage4CompletedCount, 1) else state.stage4CompletedCount
+        ))
+        battle.reward()
+    }
+
     suspend fun upgradeCombatUnit(unitId: Int): Boolean = db.withTransaction {
         val state = dao.getGameStateDirect() ?: return@withTransaction false
         val unitsList = dao.getCombatUnitsDirect()
@@ -740,6 +771,7 @@ class GameRepository(private val db: GameDatabase) {
         require(resources.size == 8 && resources.map { it.name }.toSet().size == 8 &&
             resources.all { it.quantity.isFinite() && it.quantity >= 0 }) { "Recursos inválidos no backup." }
         require(missions.isNotEmpty() && missions.map { it.id }.toSet().size == missions.size) { "Missões inválidas no backup." }
+        dao.abandonBattles()
         dao.clearResources()
         dao.clearBuildings()
         dao.clearCombatUnits()
@@ -778,7 +810,7 @@ class GameRepository(private val db: GameDatabase) {
                 // Unknown schema versions must fail without deleting the player's save.
                 val db = Room.databaseBuilder(
                     context.applicationContext, GameDatabase::class.java, "nexus_tycoon.db"
-                ).addMigrations(GameDatabase.MIGRATION_8_9, GameDatabase.MIGRATION_9_10).build()
+                ).addMigrations(GameDatabase.MIGRATION_8_9, GameDatabase.MIGRATION_9_10, GameDatabase.MIGRATION_10_11).build()
                 val repo = GameRepository(db)
                 INSTANCE = repo
                 repo

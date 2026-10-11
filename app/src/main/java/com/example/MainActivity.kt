@@ -2622,14 +2622,10 @@ fun CombatTab(
                 val enemyHp = (stage.enemyHp * scaleHp).toInt()
                 val enemyDmg = (stage.enemyDmg * scaleDmg).toInt()
 
-                // Scale rewards
-                val scaleCash = 1.0 + 0.06 * completedCount
-                val scaleGems = 1.0 + 0.05 * completedCount
-                val scaleTokens = 1.0 + 0.05 * completedCount
-
-                val lootCash = (stage.id * 2500.0) * scaleCash
-                val lootGems = ((stage.id * 20L) * scaleGems).toLong()
-                val lootTokens = ((stage.id * 5L) * scaleTokens).toLong()
+                val reward = com.example.data.CombatRewards.forLevel(stage.id, completedCount + 1)
+                val lootCash = reward.credits
+                val lootGems = reward.diamonds
+                val lootTokens = reward.guildTokens
 
                 Card(
                     modifier = Modifier.fillMaxWidth(),

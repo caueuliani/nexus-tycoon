@@ -60,6 +60,7 @@ class AdRewardTest {
             // Version 8 has the same six gameplay tables and no reward receipt table.
             android.database.sqlite.SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null,
                 android.database.sqlite.SQLiteDatabase.OPEN_READWRITE).use { old ->
+                old.execSQL("DROP TABLE combat_battles")
                 old.execSQL("DROP TABLE ad_reward_receipts")
                 listOf("availableCores", "industrialEngineeringLevel", "tacticalLogisticsLevel", "offlineReserveLevel", "claimedCoreEvents").forEach {
                     old.execSQL("ALTER TABLE game_state DROP COLUMN `$it`")
@@ -67,13 +68,13 @@ class AdRewardTest {
                 old.version = 8
             }
             db = Room.databaseBuilder(context, GameDatabase::class.java, name)
-                .addMigrations(GameDatabase.MIGRATION_8_9, GameDatabase.MIGRATION_9_10).build()
+                .addMigrations(GameDatabase.MIGRATION_8_9, GameDatabase.MIGRATION_9_10, GameDatabase.MIGRATION_10_11).build()
             repo = GameRepository(db)
             assertEquals(before, repo.exportBackup())
             assertTrue(repo.grantAdReward("persisted-ad"))
             db.close()
             db = Room.databaseBuilder(context, GameDatabase::class.java, name)
-                .addMigrations(GameDatabase.MIGRATION_8_9, GameDatabase.MIGRATION_9_10).build()
+                .addMigrations(GameDatabase.MIGRATION_8_9, GameDatabase.MIGRATION_9_10, GameDatabase.MIGRATION_10_11).build()
             repo = GameRepository(db)
             assertFalse(repo.grantAdReward("persisted-ad"))
             assertEquals(128L, repo.getGameStateDirect()!!.starGems)
