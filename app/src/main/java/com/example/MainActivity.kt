@@ -204,6 +204,7 @@ fun MainAppContent(viewModel: GameViewModel) {
         OfflineEarningsDialog(
             report = offlineReport!!,
             isSubscribed = state.isSubscribed,
+            offlineHours = com.example.data.StellarLab.offlineHours(state),
             onDismiss = { viewModel.dismissOfflineEarnings() }
         )
     }
@@ -2094,19 +2095,9 @@ fun BuildingProductionCard(
     onProduce: () -> Unit,
     onToggleAutoSell: (Boolean) -> Unit
 ) {
-    val costCard = scientists.find { it.targetBuildingId == building.id && it.boostType == "COST_REDUCTION" }
-    val costReductionRate = if (costCard != null && costCard.level > 0) costCard.getBoostValue() else 0.0
-    val costMultiplierFactor = (1.0 - costReductionRate).coerceIn(0.2, 1.0)
-    val discountedBaseCost = building.baseCost * costMultiplierFactor
+    val discountedBaseCost = com.example.data.EconomyCosts.buildingBase(building, scientists, gameState ?: GameState())
+    val (levelsGained, cost) = calculateMultiUpgrade(discountedBaseCost, building.costMultiplier, building.level, currentCash, upgradeMultiplier)
 
-    val (levelsGained, cost) = calculateMultiUpgrade(
-        discountedBaseCost,
-        building.costMultiplier,
-        building.level,
-        currentCash,
-        upgradeMultiplier
-    )
-    
     // --- Scientist/Researcher multipliers ---
     // a) Global supreme boost (ID 6)
     val globalSupremeCard = scientists.find { it.id == 6 }
@@ -2604,6 +2595,7 @@ fun CombatTab(
             // Layout combat units upgrades
             combatUnits.forEach { unit ->
                 CombatUnitItemCard(
+                    state = state,
                     unit = unit,
                     currentCash = state.cash,
                     onUpgrade = { viewModel.upgradeCombatUnit(unit.id) }
@@ -2762,10 +2754,11 @@ fun CombatTab(
 @Composable
 fun CombatUnitItemCard(
     unit: CombatUnit,
+    state: GameState,
     currentCash: Double,
     onUpgrade: () -> Unit
 ) {
-    val upgradeCost = unit.upgradeCost * unit.costMultiplier.pow((unit.level - 1).toDouble())
+    val upgradeCost = com.example.data.EconomyCosts.combat(unit, state)
     Card(
         modifier = Modifier.fillMaxWidth().testTag("combat_unit_card_${unit.id}"),
         shape = RoundedCornerShape(12.dp),
@@ -3709,6 +3702,7 @@ fun AscensionTab(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        com.example.ui.StellarLaboratory(state, viewModel)
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
@@ -4314,6 +4308,7 @@ fun formatSecondsToDuration(seconds: Long): String {
 @Composable
 fun OfflineEarningsDialog(
     report: OfflineEarnings,
+    offlineHours: Int,
     isSubscribed: Boolean,
     onDismiss: () -> Unit
 ) {
@@ -4368,7 +4363,7 @@ fun OfflineEarningsDialog(
                             )
                             Badge(containerColor = if (isSubscribed) SolarGold else MaterialTheme.colorScheme.secondary) {
                                 Text(
-                                    if (isSubscribed) "Premium VIP (Máx: 12h)" else "Jogador Comum (Máx: 8h)",
+                                    if (isSubscribed) "Premium VIP (Máx: ${offlineHours}h)" else "Jogador Comum (Máx: ${offlineHours}h)",
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (isSubscribed) Color.Black else TextWhite,
@@ -4383,18 +4378,18 @@ fun OfflineEarningsDialog(
                             fontWeight = FontWeight.Black,
                             color = if (isSubscribed) SolarGold else TextWhite
                         )
-                        if (!isSubscribed && report.offlineSeconds >= 28800) {
+                        if (!isSubscribed && report.offlineSeconds >= offlineHours * 3600L) {
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "💡 Dica: Seu tempo offline atingiu o limite de 8 horas. Vire VIP na Loja para expandir seu limite para 12 horas!",
+                                text = "💡 Dica: Seu tempo offline atingiu o limite de $offlineHours horas. Vire VIP na Loja para expandir seu limite para ${offlineHours + 4} horas!",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = SolarGold,
                                 fontSize = 10.sp
                             )
-                        } else if (isSubscribed && report.offlineSeconds >= 43200) {
+                        } else if (isSubscribed && report.offlineSeconds >= offlineHours * 3600L) {
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "⭐ Seu limite Premium de 12 horas de lucros offline foi aproveitado ao máximo!",
+                                text = "⭐ Seu limite Premium de $offlineHours horas de lucros offline foi aproveitado ao máximo!",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = SuccessGreen,
                                 fontSize = 10.sp
@@ -4640,91 +4635,8 @@ fun GameTutorialDialog(
     )
 }
 
-fun calculateMultiUpgrade(
-    baseCost: Double,
-    costMultiplier: Double,
-    currentLevel: Int,
-    currentCash: Double,
-    multiplier: String
-): Pair<Int, Double> {
-    val targetMultiplier = when (multiplier) {
-        "x5" -> 5
-        "x10" -> 10
-        "MAX" -> 999999
-        else -> 1
-    }
-
-    var totalCost = 0.0
-    var levelsGained = 0
-    var currentL = currentLevel
-    var remainingCash = currentCash
-
-    if (currentL == 0) {
-        val unlockCost = baseCost
-        if (remainingCash < unlockCost) {
-            return Pair(1, unlockCost)
-        }
-        totalCost += unlockCost
-        levelsGained = 1
-        remainingCash -= unlockCost
-        currentL = 1
-        if (targetMultiplier == 1) {
-            return Pair(1, unlockCost)
-        }
-    }
-
-    val nLimit = if (multiplier == "MAX") {
-        if (remainingCash <= 0.0) {
-            0
-        } else {
-            val r = costMultiplier
-            val maxPossible = if (kotlin.math.abs(r - 1.0) < 1e-9) {
-                val denom = baseCost * r.pow(currentL.toDouble())
-                if (denom <= 0.0) 0 else (remainingCash / denom).toInt()
-            } else {
-                val denom = baseCost * r.pow(currentL.toDouble())
-                val arg = 1.0 + (remainingCash * (r - 1.0)) / denom
-                if (arg <= 1.0) {
-                    0
-                } else {
-                    (kotlin.math.log(arg, kotlin.math.E) / kotlin.math.log(r, kotlin.math.E)).toInt()
-                }
-            }
-            kotlin.math.min(maxPossible, 999999 - levelsGained)
-        }
-    } else {
-        targetMultiplier - levelsGained
-    }
-
-    if (nLimit > 0) {
-        val r = costMultiplier
-        var addCost = if (kotlin.math.abs(r - 1.0) < 1e-9) {
-            baseCost * r.pow(currentL.toDouble()) * nLimit
-        } else {
-            baseCost * r.pow(currentL.toDouble()) * (r.pow(nLimit.toDouble()) - 1.0) / (r - 1.0)
-        }
-
-        var currentLimit = nLimit
-        while (currentLimit > 0 && addCost > remainingCash) {
-            currentLimit--
-            addCost = if (kotlin.math.abs(r - 1.0) < 1e-9) {
-                baseCost * r.pow(currentL.toDouble()) * currentLimit
-            } else {
-                baseCost * r.pow(currentL.toDouble()) * (r.pow(currentLimit.toDouble()) - 1.0) / (r - 1.0)
-            }
-        }
-
-        totalCost += addCost
-        levelsGained += currentLimit
-    }
-
-    if (levelsGained == 0) {
-        val nextLevelCost = baseCost * costMultiplier.pow(currentL.toDouble())
-        return Pair(1, nextLevelCost)
-    }
-
-    return Pair(levelsGained, totalCost)
-}
+fun calculateMultiUpgrade(baseCost: Double, costMultiplier: Double, currentLevel: Int, currentCash: Double, multiplier: String): Pair<Int, Double> =
+    com.example.data.EconomyCosts.calculateMultiUpgrade(baseCost, costMultiplier, currentLevel, currentCash, multiplier)
 
 // Format double values cleanly as strings
 fun formatCredits(amount: Double): String = com.example.ui.compactNumber(amount)

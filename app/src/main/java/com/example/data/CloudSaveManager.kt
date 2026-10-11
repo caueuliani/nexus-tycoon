@@ -133,69 +133,7 @@ class CloudSaveManager(private val context: Context) {
 
         try {
             val snapshot = repository.exportBackup()
-            val state = snapshot.state
-            val resourcesList = snapshot.resources
-            val buildingsList = snapshot.buildings
-            val combatList = snapshot.combatUnits
-
-            // Map data structure
-            val payload = mapOf(
-                "backupVersion" to 2,
-                "companyName" to state.companyName,
-                "cash" to state.cash,
-                "starGems" to state.starGems,
-                "nebulaCores" to state.nebulaCores,
-                "guildTokens" to state.guildTokens,
-                "guildName" to state.guildName,
-                "selectedSkinId" to state.selectedSkinId,
-                "selectedAvatarId" to state.selectedAvatarId,
-                "isSubscribed" to state.isSubscribed,
-                "highestCombatStage" to state.highestCombatStage,
-                "hasAutoSellLicense" to state.hasAutoSellLicense,
-                "stage1CompletedCount" to state.stage1CompletedCount,
-                "stage2CompletedCount" to state.stage2CompletedCount,
-                "stage3CompletedCount" to state.stage3CompletedCount,
-                "stage4CompletedCount" to state.stage4CompletedCount,
-                "hasCompletedTutorial" to state.hasCompletedTutorial,
-                "comrades" to state.comrades,
-                "comradesPerSec" to state.comradesPerSec,
-                "playerRank" to state.playerRank,
-                "completedRankMissions" to state.completedRankMissions,
-                "science" to state.science,
-                "scienceProdLevel" to state.scienceProdLevel,
-                "scienceCreditsLevel" to state.scienceCreditsLevel,
-                "scienceComradeLevel" to state.scienceComradeLevel,
-                "scienceCombatLevel" to state.scienceCombatLevel,
-                "lastSavedTime" to System.currentTimeMillis(),
-                
-                "resources" to resourcesList.map { r -> mapOf("name" to r.name, "quantity" to r.quantity) },
-                "buildings" to buildingsList.map { b -> mapOf(
-                    "id" to b.id, "name" to b.name, "level" to b.level, "isAutomated" to b.isAutomated,
-                    "baseCost" to b.baseCost, "costMultiplier" to b.costMultiplier,
-                    "productionRatePerLevel" to b.productionRatePerLevel, "resourceProduced" to b.resourceProduced,
-                    "inputResource" to b.inputResource, "inputAmountPerSec" to b.inputAmountPerSec,
-                    "isAutoSelling" to b.isAutoSelling
-                ) },
-                "researchers" to snapshot.researchers.map { r -> mapOf(
-                    "id" to r.id, "name" to r.name, "description" to r.description,
-                    "level" to r.level, "cardsCollected" to r.cardsCollected,
-                    "cardsNeededToUpgrade" to r.cardsNeededToUpgrade,
-                    "targetBuildingId" to r.targetBuildingId, "boostType" to r.boostType,
-                    "rarity" to r.rarity
-                ) },
-                "missions" to snapshot.missions.map { m -> mapOf(
-                    "id" to m.id, "description" to m.description, "progress" to m.progress,
-                    "target" to m.target, "isCompleted" to m.isCompleted, "isClaimed" to m.isClaimed,
-                    "missionType" to m.missionType, "targetId" to m.targetId,
-                    "targetString" to m.targetString, "rewardGems" to m.rewardGems,
-                    "rewardScience" to m.rewardScience, "rewardCapsuleType" to m.rewardCapsuleType
-                ) },
-                "combatUnits" to combatList.map { c -> mapOf(
-                    "id" to c.id, "name" to c.name, "type" to c.type, "level" to c.level,
-                    "health" to c.health, "attack" to c.attack, "upgradeCost" to c.upgradeCost,
-                    "costMultiplier" to c.costMultiplier
-                ) }
-            )
+            val payload = createBackupPayload(snapshot)
 
             if (_isSandboxMode.value) {
                 // SANDBOX MODE: Simulate cloud writing
@@ -252,7 +190,7 @@ class CloudSaveManager(private val context: Context) {
                     onError("Nenhum backup encontrado.")
                     return
                 }
-                
+
                 restoreFromPayload(repository, payload)
                 _syncing.value = false
                 addLog("Backup da Nuvem Sandbox restaurado com sucesso!")
@@ -263,7 +201,7 @@ class CloudSaveManager(private val context: Context) {
                 val doc = dbRef.collection("users").document(requireNotNull(sessionUid) { "Sessão expirada." })
                     .get(com.google.firebase.firestore.Source.SERVER)
                     .await()
-                
+
                 if (!doc.exists()) {
                     _syncing.value = false
                     addLog("Nenhum backup de Firebase encontrado.")
@@ -291,9 +229,82 @@ class CloudSaveManager(private val context: Context) {
         }
     }
 
+    internal fun createBackupPayload(snapshot: BackupSnapshot): Map<String, Any> {
+            val state = snapshot.state
+            val resourcesList = snapshot.resources
+            val buildingsList = snapshot.buildings
+            val combatList = snapshot.combatUnits
+
+            // Map data structure
+            return mapOf(
+                "backupVersion" to 3,
+                "companyName" to state.companyName,
+                "cash" to state.cash,
+                "starGems" to state.starGems,
+                "nebulaCores" to state.nebulaCores,
+                "availableCores" to state.availableCores,
+                "industrialEngineeringLevel" to state.industrialEngineeringLevel,
+                "tacticalLogisticsLevel" to state.tacticalLogisticsLevel,
+                "offlineReserveLevel" to state.offlineReserveLevel,
+                "claimedCoreEvents" to state.claimedCoreEvents,
+                "guildTokens" to state.guildTokens,
+                "guildName" to state.guildName,
+                "selectedSkinId" to state.selectedSkinId,
+                "selectedAvatarId" to state.selectedAvatarId,
+                "isSubscribed" to state.isSubscribed,
+                "highestCombatStage" to state.highestCombatStage,
+                "hasAutoSellLicense" to state.hasAutoSellLicense,
+                "stage1CompletedCount" to state.stage1CompletedCount,
+                "stage2CompletedCount" to state.stage2CompletedCount,
+                "stage3CompletedCount" to state.stage3CompletedCount,
+                "stage4CompletedCount" to state.stage4CompletedCount,
+                "hasCompletedTutorial" to state.hasCompletedTutorial,
+                "comrades" to state.comrades,
+                "comradesPerSec" to state.comradesPerSec,
+                "playerRank" to state.playerRank,
+                "completedRankMissions" to state.completedRankMissions,
+                "science" to state.science,
+                "scienceProdLevel" to state.scienceProdLevel,
+                "scienceCreditsLevel" to state.scienceCreditsLevel,
+                "scienceComradeLevel" to state.scienceComradeLevel,
+                "scienceCombatLevel" to state.scienceCombatLevel,
+                "lastSavedTime" to System.currentTimeMillis(),
+
+                "resources" to resourcesList.map { r -> mapOf("name" to r.name, "quantity" to r.quantity) },
+                "buildings" to buildingsList.map { b -> mapOf(
+                    "id" to b.id, "name" to b.name, "level" to b.level, "isAutomated" to b.isAutomated,
+                    "baseCost" to b.baseCost, "costMultiplier" to b.costMultiplier,
+                    "productionRatePerLevel" to b.productionRatePerLevel, "resourceProduced" to b.resourceProduced,
+                    "inputResource" to b.inputResource, "inputAmountPerSec" to b.inputAmountPerSec,
+                    "isAutoSelling" to b.isAutoSelling
+                ) },
+                "researchers" to snapshot.researchers.map { r -> mapOf(
+                    "id" to r.id, "name" to r.name, "description" to r.description,
+                    "level" to r.level, "cardsCollected" to r.cardsCollected,
+                    "cardsNeededToUpgrade" to r.cardsNeededToUpgrade,
+                    "targetBuildingId" to r.targetBuildingId, "boostType" to r.boostType,
+                    "rarity" to r.rarity
+                ) },
+                "missions" to snapshot.missions.map { m -> mapOf(
+                    "id" to m.id, "description" to m.description, "progress" to m.progress,
+                    "target" to m.target, "isCompleted" to m.isCompleted, "isClaimed" to m.isClaimed,
+                    "missionType" to m.missionType, "targetId" to m.targetId,
+                    "targetString" to m.targetString, "rewardGems" to m.rewardGems,
+                    "rewardScience" to m.rewardScience, "rewardCapsuleType" to m.rewardCapsuleType
+                ) },
+                "combatUnits" to combatList.map { c -> mapOf(
+                    "id" to c.id, "name" to c.name, "type" to c.type, "level" to c.level,
+                    "health" to c.health, "attack" to c.attack, "upgradeCost" to c.upgradeCost,
+                    "costMultiplier" to c.costMultiplier
+                ) }
+            )
+
+    }
+
     @Suppress("UNCHECKED_CAST")
     suspend fun restoreFromPayload(repository: GameRepository, payload: Map<String, Any>) {
-        require((payload["backupVersion"] as? Number)?.toInt() == 2) {
+        val version = (payload["backupVersion"] as? Number)?.toInt()
+        require(version == 2 || version == 3) {
             "Backup antigo ou incompatível. Gere um novo backup no dispositivo de origem; o progresso local foi preservado."
         }
         require(listOf("resources", "buildings", "combatUnits", "researchers", "missions").all {
@@ -303,7 +314,16 @@ class CloudSaveManager(private val context: Context) {
         require(scienceFields.all { payload[it] is Number && (payload[it] as Number).toInt() >= 0 }) {
             "Pesquisas ausentes ou inválidas no backup."
         }
+        if (version == 3) {
+            require(listOf("availableCores", "industrialEngineeringLevel", "tacticalLogisticsLevel", "offlineReserveLevel").all { payload[it] is Number }) { "Laboratório ausente no backup." }
+            require(payload["claimedCoreEvents"] is String) { "Resgates de eventos ausentes." }
+        }
         val state = GameState(
+            availableCores = if (version == 2) (payload["nebulaCores"] as? Number)?.toLong() ?: 0L else (payload["availableCores"] as Number).toLong(),
+            industrialEngineeringLevel = if (version == 2) 0 else (payload["industrialEngineeringLevel"] as Number).toInt(),
+            tacticalLogisticsLevel = if (version == 2) 0 else (payload["tacticalLogisticsLevel"] as Number).toInt(),
+            offlineReserveLevel = if (version == 2) 0 else (payload["offlineReserveLevel"] as Number).toInt(),
+            claimedCoreEvents = if (version == 2) "" else payload["claimedCoreEvents"] as String,
             id = 1,
             companyName = payload["companyName"] as? String ?: "Nova Core Inc",
             cash = (payload["cash"] as? Number)?.toDouble() ?: 5000.0,

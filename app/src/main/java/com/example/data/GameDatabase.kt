@@ -11,6 +11,12 @@ data class GameState(
     val cash: Double = 5000.0,
     val starGems: Long = 0,
     val nebulaCores: Long = 0,
+    @ColumnInfo(defaultValue = "0") val availableCores: Long = 0,
+    @ColumnInfo(defaultValue = "0") val industrialEngineeringLevel: Int = 0,
+    @ColumnInfo(defaultValue = "0") val tacticalLogisticsLevel: Int = 0,
+    @ColumnInfo(defaultValue = "0") val offlineReserveLevel: Int = 0,
+    @ColumnInfo(defaultValue = "''") val claimedCoreEvents: String = "",
+
     val guildTokens: Long = 0,
     val guildName: String = "No Guild Joined",
     val selectedSkinId: Int = 0, // 0: Industrial Blue, 1: Solar Flare Gold, 2: Cyber Purple Neon
@@ -266,11 +272,20 @@ interface GameDao {
         ActiveMission::class,
         AdRewardReceipt::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class GameDatabase : RoomDatabase() {
     companion object {
+        val MIGRATION_9_10 = object : androidx.room.migration.Migration(9, 10) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                listOf("availableCores", "industrialEngineeringLevel", "tacticalLogisticsLevel", "offlineReserveLevel").forEach {
+                    db.execSQL("ALTER TABLE game_state ADD COLUMN `$it` INTEGER NOT NULL DEFAULT 0")
+                }
+                db.execSQL("ALTER TABLE game_state ADD COLUMN claimedCoreEvents TEXT NOT NULL DEFAULT ''")
+                db.execSQL("UPDATE game_state SET availableCores = nebulaCores")
+            }
+        }
         val MIGRATION_8_9 = object : androidx.room.migration.Migration(8, 9) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE IF NOT EXISTS `ad_reward_receipts` (`token` TEXT NOT NULL, `rewardedAt` INTEGER NOT NULL, PRIMARY KEY(`token`))")

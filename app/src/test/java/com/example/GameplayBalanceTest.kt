@@ -32,7 +32,7 @@ class GameplayBalanceTest {
             assertTrue(repo.getBuildingsDirect().first().isAutomated)
             assertEquals(1, repo.getBuildingsDirect().first().level)
             val existing = fresh.copy(starGems = 250, science = 180, nebulaCores = 15, guildTokens = 50)
-            repo.saveGameState(existing)
+            db.gameDao.saveGameState(existing)
             repo.checkAndInitialize()
             assertEquals(existing, repo.getGameStateDirect())
         } finally { db.close() }

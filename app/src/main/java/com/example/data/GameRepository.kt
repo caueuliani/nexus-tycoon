@@ -208,7 +208,7 @@ class GameRepository(private val db: GameDatabase) {
             return@withTransaction null
         }
 
-        val maxSeconds = if (state.isSubscribed) 43200L else 28800L
+        val maxSeconds = StellarLab.offlineHours(state) * 3600L
         val seconds = (diffMs / 1000).coerceAtMost(maxSeconds) // max 12h para VIP, 8h para padrão
         val buildingsList = dao.getBuildingsDirect()
         val currentResources = dao.getResourcesDirect().associate { it.name to it.quantity }.toMutableMap()
@@ -326,8 +326,42 @@ class GameRepository(private val db: GameDatabase) {
         return@withTransaction OfflineEarnings(seconds, netEarnings, creditEarned)
     }
 
-    suspend fun saveGameState(state: GameState) = withContext(Dispatchers.IO) {
-        dao.saveGameState(state)
+    // Generic callers may hold a stale UI snapshot. Core progression is owned by
+    // the dedicated transactions, and must never be overwritten by those callers.
+    suspend fun saveGameState(state: GameState) = db.withTransaction {
+        val current = dao.getGameStateDirect()
+        dao.saveGameState(if (current == null) state else state.copy(
+            nebulaCores = current.nebulaCores, availableCores = current.availableCores,
+            industrialEngineeringLevel = current.industrialEngineeringLevel,
+            tacticalLogisticsLevel = current.tacticalLogisticsLevel,
+            offlineReserveLevel = current.offlineReserveLevel, claimedCoreEvents = current.claimedCoreEvents
+        ))
+    }
+
+    suspend fun buyStellarUpgrade(upgrade: StellarUpgrade, expectedLevel: Int): Boolean = db.withTransaction {
+        val state = dao.getGameStateDirect() ?: return@withTransaction false
+        val level = upgrade.level(state)
+        if (level != expectedLevel) return@withTransaction false
+        val cost = upgrade.costs.getOrNull(level) ?: return@withTransaction false
+        if (state.availableCores < cost) return@withTransaction false
+        val paid = state.copy(availableCores = state.availableCores - cost)
+        dao.saveGameState(when (upgrade) {
+            StellarUpgrade.INDUSTRIAL -> paid.copy(industrialEngineeringLevel = level + 1)
+            StellarUpgrade.TACTICAL -> paid.copy(tacticalLogisticsLevel = level + 1)
+            StellarUpgrade.OFFLINE -> paid.copy(offlineReserveLevel = level + 1)
+        })
+        true
+    }
+
+    suspend fun claimCoreEvent(taskId: String, completed: Boolean): Boolean = db.withTransaction {
+        if (!completed || taskId !in setOf("Energy Supplier", "Mega Titan Upgrader", "Celestial Capitalist")) return@withTransaction false
+        val state = dao.getGameStateDirect() ?: return@withTransaction false
+        val claimed = state.claimedCoreEvents.split("|").filter { it.isNotEmpty() }
+        if (taskId in claimed) return@withTransaction false
+        dao.saveGameState(StellarLab.grant(state, 2).copy(
+            starGems = state.starGems + 50, claimedCoreEvents = (claimed + taskId).joinToString("|")
+        ))
+        true
     }
 
     suspend fun getResourcesDirect(): List<ResourceInventory> = withContext(Dispatchers.IO) {
@@ -350,91 +384,8 @@ class GameRepository(private val db: GameDatabase) {
         dao.saveResource(res)
     }
 
-    fun calculateMultiUpgrade(
-        baseCost: Double,
-        costMultiplier: Double,
-        currentLevel: Int,
-        currentCash: Double,
-        multiplier: String
-    ): Pair<Int, Double> {
-        val targetMultiplier = when (multiplier) {
-            "x5" -> 5
-            "x10" -> 10
-            "MAX" -> 999999
-            else -> 1
-        }
-
-        var totalCost = 0.0
-        var levelsGained = 0
-        var currentL = currentLevel
-        var remainingCash = currentCash
-
-        if (currentL == 0) {
-            val unlockCost = baseCost
-            if (remainingCash < unlockCost) {
-                return Pair(1, unlockCost)
-            }
-            totalCost += unlockCost
-            levelsGained = 1
-            remainingCash -= unlockCost
-            currentL = 1
-            if (targetMultiplier == 1) {
-                return Pair(1, unlockCost)
-            }
-        }
-
-        val nLimit = if (multiplier == "MAX") {
-            if (remainingCash <= 0.0) {
-                0
-            } else {
-                val r = costMultiplier
-                val maxPossible = if (kotlin.math.abs(r - 1.0) < 1e-9) {
-                    val denom = baseCost * r.pow(currentL.toDouble())
-                    if (denom <= 0.0) 0 else (remainingCash / denom).toInt()
-                } else {
-                    val denom = baseCost * r.pow(currentL.toDouble())
-                    val arg = 1.0 + (remainingCash * (r - 1.0)) / denom
-                    if (arg <= 1.0) {
-                        0
-                    } else {
-                        (kotlin.math.log(arg, kotlin.math.E) / kotlin.math.log(r, kotlin.math.E)).toInt()
-                    }
-                }
-                kotlin.math.min(maxPossible, 999999 - levelsGained)
-            }
-        } else {
-            targetMultiplier - levelsGained
-        }
-
-        if (nLimit > 0) {
-            val r = costMultiplier
-            var addCost = if (kotlin.math.abs(r - 1.0) < 1e-9) {
-                baseCost * r.pow(currentL.toDouble()) * nLimit
-            } else {
-                baseCost * r.pow(currentL.toDouble()) * (r.pow(nLimit.toDouble()) - 1.0) / (r - 1.0)
-            }
-
-            var currentLimit = nLimit
-            while (currentLimit > 0 && addCost > remainingCash) {
-                currentLimit--
-                addCost = if (kotlin.math.abs(r - 1.0) < 1e-9) {
-                    baseCost * r.pow(currentL.toDouble()) * currentLimit
-                } else {
-                    baseCost * r.pow(currentL.toDouble()) * (r.pow(currentLimit.toDouble()) - 1.0) / (r - 1.0)
-                }
-            }
-
-            totalCost += addCost
-            levelsGained += currentLimit
-        }
-
-        if (levelsGained == 0) {
-            val nextLevelCost = baseCost * costMultiplier.pow(currentL.toDouble())
-            return Pair(1, nextLevelCost)
-        }
-
-        return Pair(levelsGained, totalCost)
-    }
+    fun calculateMultiUpgrade(baseCost: Double, costMultiplier: Double, currentLevel: Int, currentCash: Double, multiplier: String) =
+        EconomyCosts.calculateMultiUpgrade(baseCost, costMultiplier, currentLevel, currentCash, multiplier)
 
     fun getBuildingComradeCost(buildingId: Int, currentLevel: Int): Double {
         val base = when (buildingId) {
@@ -457,10 +408,7 @@ class GameRepository(private val db: GameDatabase) {
         val b = buildingsList.find { it.id == buildingId } ?: return@withTransaction false
         
         val resCardList = dao.getResearchersDirect()
-        val costCard = resCardList.find { it.targetBuildingId == buildingId && it.boostType == "COST_REDUCTION" }
-        val costReductionRate = if (costCard != null && costCard.level > 0) costCard.getBoostValue() else 0.0
-        val costMultiplierFactor = (1.0 - costReductionRate).coerceIn(0.2, 1.0)
-        val discountedBaseCost = b.baseCost * costMultiplierFactor
+        val discountedBaseCost = EconomyCosts.buildingBase(b, resCardList, state)
 
         val calc = calculateMultiUpgrade(discountedBaseCost, b.costMultiplier, b.level, state.cash, multiplier)
         val levelsGained = calc.first
@@ -507,7 +455,7 @@ class GameRepository(private val db: GameDatabase) {
         val unitsList = dao.getCombatUnitsDirect()
         val u = unitsList.find { it.id == unitId } ?: return@withTransaction false
         
-        val cost = u.upgradeCost * u.costMultiplier.pow(u.level - 1)
+        val cost = EconomyCosts.combat(u, state)
         if (state.cash >= cost) {
             dao.saveGameState(state.copy(cash = state.cash - cost))
             dao.updateCombatUnit(u.copy(
@@ -624,10 +572,7 @@ class GameRepository(private val db: GameDatabase) {
         if (state.cash < minCashRequired) return@withTransaction false
         
         val earnedCores = kotlin.math.floor(kotlin.math.sqrt(state.cash / minCashRequired)).toLong()
-        dao.saveGameState(state.copy(
-            cash = 5000.0,
-            nebulaCores = state.nebulaCores + earnedCores
-        ))
+        dao.saveGameState(StellarLab.grant(state, earnedCores).copy(cash = 5000.0))
         
         dao.saveResources(listOf(
             ResourceInventory("Energy Cell", 100.0),
@@ -787,6 +732,7 @@ class GameRepository(private val db: GameDatabase) {
         researchers: List<ResearcherCard>,
         missions: List<ActiveMission>
     ) = db.withTransaction {
+        StellarLab.validate(state)
         require(state.id == 1 && state.cash.isFinite() && state.cash >= 0) { "Saldo inválido no backup." }
         require(buildings.map { it.id }.sorted() == (1..8).toList()) { "Indústrias incompletas no backup." }
         require(researchers.map { it.id }.sorted() == (1..6).toList()) { "Cientistas incompletos no backup." }
@@ -832,7 +778,7 @@ class GameRepository(private val db: GameDatabase) {
                 // Unknown schema versions must fail without deleting the player's save.
                 val db = Room.databaseBuilder(
                     context.applicationContext, GameDatabase::class.java, "nexus_tycoon.db"
-                ).addMigrations(GameDatabase.MIGRATION_8_9).build()
+                ).addMigrations(GameDatabase.MIGRATION_8_9, GameDatabase.MIGRATION_9_10).build()
                 val repo = GameRepository(db)
                 INSTANCE = repo
                 repo

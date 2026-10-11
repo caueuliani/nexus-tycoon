@@ -145,7 +145,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             EventTask("Celestial Capitalist", "Reach 50,000 Cash", 5000.0, 50000.0, false)
         ))
     )
-    val seasonalChampionship: StateFlow<SeasonalEvent> = _seasonalChampionship.asStateFlow()
+    val seasonalChampionship: StateFlow<SeasonalEvent> = combine(_seasonalChampionship, gameState) { event, state ->
+        val claimed = state?.claimedCoreEvents?.split("|").orEmpty()
+        event.copy(tasks = event.tasks.map { it.copy(isClaimed = it.taskId in claimed) }.toMutableList())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), _seasonalChampionship.value)
 
     // Global Trade Competition Board simulator (simulating live price actions from other factions)
     private val _globalTradeStandings = MutableStateFlow(listOf(
@@ -474,7 +477,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             }
             if (match) {
                 val nextProg = if (key == "CREDITS_REACH") amount else task.progress + amount
-                task.copy(progress = min(task.target, nextProg), isClaimed = nextProg >= task.target)
+                task.copy(progress = min(task.target, nextProg))
             } else {
                 task
             }
@@ -699,7 +702,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val list = currentEvent.tasks.map { task ->
             if (task.taskId == "Mega Titan Upgrader") {
                 val maxLevel = combatUnits.value.maxOfOrNull { it.level } ?: 1
-                task.copy(progress = maxLevel.toDouble(), isClaimed = maxLevel >= 5)
+                task.copy(progress = maxLevel.toDouble())
             } else task
         }.toMutableList()
         _seasonalChampionship.value = currentEvent.copy(tasks = list)
@@ -932,21 +935,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     // Force claim seasonal item
     fun claimEventReward(taskId: String) {
-        val current = gameState.value ?: return
-        val event = _seasonalChampionship.value
-        val task = event.tasks.find { it.taskId == taskId }
-        if (task != null && task.progress >= task.target && !task.isClaimed) {
-            viewModelScope.launch {
-                repository.saveGameState(current.copy(
-                    starGems = current.starGems + 50L,
-                    nebulaCores = current.nebulaCores + 2
-                ))
-                val updatedTasks = event.tasks.map {
-                    if (it.taskId == taskId) it.copy(isClaimed = true) else it
-                }.toMutableList()
-                _seasonalChampionship.value = event.copy(tasks = updatedTasks)
-            }
+        viewModelScope.launch {
+            val task = _seasonalChampionship.value.tasks.find { it.taskId == taskId } ?: return@launch
+            repository.claimCoreEvent(taskId, task.progress >= task.target)
         }
+    }
+
+    fun buyStellarUpgrade(upgrade: StellarUpgrade, expectedLevel: Int, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch { onResult(repository.buyStellarUpgrade(upgrade, expectedLevel)) }
     }
 
     // Join guild simulator

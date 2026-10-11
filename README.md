@@ -19,7 +19,7 @@ Em macOS/Linux, use `./gradlew`. O debug utiliza a assinatura padrão de desenvo
 
 `BackupProductionAuditTest` verifica preservação de progresso após restauração em uma instalação nova. `LaunchProductionAuditTest` verifica a abertura da Activity no Robolectric, sem substituir execução em aparelho real.
 
-O backup usa o formato 2, incluindo cientistas, missões e níveis de pesquisa. Backups antigos incompletos são recusados antes de alterar dados locais; gere um novo backup no aparelho de origem. O modo de demonstração guarda arquivos locais duráveis separados por conta e não substitui a nuvem real. A restauração é transacional; a concorrência geral entre ações do jogo e o laço de produção ainda precisa de revisão.
+O backup usa o formato 3 (aceita também o formato 2), incluindo cientistas, missões e níveis de pesquisa. Backups antigos incompletos são recusados antes de alterar dados locais; gere um novo backup no aparelho de origem. O modo de demonstração guarda arquivos locais duráveis separados por conta e não substitui a nuvem real. A restauração é transacional; a concorrência geral entre ações do jogo e o laço de produção ainda precisa de revisão.
 
 ## Publicação
 
@@ -54,3 +54,21 @@ verificação de recompensas no servidor e compras Google Play continuam pendent
 O parâmetro Gradle `ADMOB_REWARDED_AD_UNIT_ID` permite sobrescrever o bloco de release.
 Nenhuma chave de assinatura ou configuração Firebase é distribuída no ZIP de fontes.
 Não publicar como produção antes de concluir essas validações.
+
+
+## Laboratório Estelar
+
+Na tela de Ascensão, Star Cores podem comprar melhorias permanentes. `nebulaCores` continua sendo o total histórico usado nas fórmulas existentes de produção (+10% por core) e requisito de ascensão. `availableCores` é o saldo gasto nas compras; ascensão e eventos creditam ambos os contadores.
+
+- Engenharia Industrial: −2% por nível nos custos em créditos das indústrias, até 10 níveis. Multiplica o preço já ajustado pelos cientistas; não reduz outras moedas.
+- Logística Tática: −2% por nível nos custos em créditos das unidades, até 10 níveis.
+- Reserva Offline: +1 hora ao limite de 8h normal/12h VIP, até 4 níveis; não altera produção por segundo.
+- Custos: 5, 8, 12, 18, 27, 40, 60, 90, 135, 200 para as duas primeiras; 10, 25, 50, 100 para Reserva Offline.
+
+Room 10 migra de 9 sem apagar dados e copia o total histórico para o saldo uma única vez. O caminho 8 → 9 → 10 permanece disponível. Compras usam o nível esperado e uma transação para evitar duplicar a compra exibida por toques rápidos. Gravações genéricas de estado não sobrescrevem a progressão de cores.
+
+Backups v3 incluem saldo, níveis e resgates dos três eventos atuais. Backups v2 continuam aceitos: são restaurados com saldo igual ao total histórico e laboratório no nível zero. Restaurar substitui o snapshot, não soma cores ao estado atual. Backups incompletos mais antigos continuam recusados. Resgates antigos de eventos não existiam no save e não podem ser reconstruídos; o registro durável começa nesta versão. O progresso parcial desses eventos continua em memória.
+
+`StellarLabTest` cobre migração/reabertura, transações concorrentes, concessões, preços compartilhados, persistência no backup e ganhos offline. Não substitui validação visual ou execução em aparelho.
+
+Validação desta implementação (10/10/2026): assembleDebug, testDebugUnitTest e lintDebug concluídos. 32 testes passaram (6 em StellarLabTest), sem falhas. Lint: 0 erros e 77 avisos. Não houve execução em aparelho; continuam pendentes a conferência visual e o teste de atualização/backup no dispositivo real.
