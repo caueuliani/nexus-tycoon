@@ -2,7 +2,7 @@
 
 Jogo Android de gestão industrial espacial em Kotlin e Jetpack Compose, com banco local Room. Inclui produção automática, mercado, combate, cientistas, missões e prestígio.
 
-**Estado: desenvolvimento. Não aprovado para produção.** Login, monetização e recursos sociais ainda contêm demonstrações; a presença das telas não significa integração com serviços reais.
+**Estado: candidata de demonstração. Não aprovada para produção.** Login Google/Firebase e anúncios recompensados têm integração real implementada, mas exigem validação em aparelho e configuração das contas. Compras reais não estão integradas; guildas e ranking são simulações locais. Consulte a [auditoria para publisher](docs/publisher-candidate.md).
 
 ## Compilar e testar
 
@@ -19,13 +19,13 @@ Em macOS/Linux, use `./gradlew`. O debug utiliza a assinatura padrão de desenvo
 
 `BackupProductionAuditTest` verifica preservação de progresso após restauração em uma instalação nova. `LaunchProductionAuditTest` verifica a abertura da Activity no Robolectric, sem substituir execução em aparelho real.
 
-O backup usa o formato 3 (aceita também o formato 2), incluindo cientistas, missões e níveis de pesquisa. Backups antigos incompletos são recusados antes de alterar dados locais; gere um novo backup no aparelho de origem. O modo de demonstração guarda arquivos locais duráveis separados por conta e não substitui a nuvem real. A restauração é transacional; a concorrência geral entre ações do jogo e o laço de produção ainda precisa de revisão.
+O backup atual usa o formato 4 (aceita também 2 e 3), incluindo laboratório e recibos de anúncios. Backups inválidos são recusados antes de alterar dados locais. O modo de demonstração guarda arquivos locais separados por conta e não substitui a nuvem real. A restauração e as operações de progresso foram auditadas e têm regressões de concorrência; consulte [compatibilidade e limitações](docs/progress-integrity.md).
 
 ## Publicação
 
 A variante release exige `KEYSTORE_PATH`, `STORE_PASSWORD` e `KEY_PASSWORD`; o alias configurado é `upload`. Mantenha a chave privada e senhas fora do repositório. Gere o bundle com `:app:bundleRelease` somente depois das validações funcionais.
 
-Antes de publicar, implementar e validar login real, regras Firebase, backup completo, migrações sem perda, Google Play Billing, anúncios, persistência de eventos, testes em aparelhos e configurações da Play Console.
+Antes de publicar, implementar Google Play Billing e exclusão de conta/dados, confirmar regras e configurações no Firebase real, validar login/anúncios/atualização/backup em aparelhos, definir persistência dos eventos e concluir as configurações da Play Console. Nenhum teste local comprova aprovação da loja.
 
 Origem: [Google AI Studio](https://ai.studio/apps/9f83ca06-d8b1-4014-ad8f-51713b1acf31).
 
@@ -75,6 +75,6 @@ Validação desta implementação (10/10/2026): assembleDebug, testDebugUnitTest
 
 ## Mineração hostil
 
-O rebalanceamento de créditos/diamantes e sua comparação com custos e indústria estão em [docs/combat-balance.md](docs/combat-balance.md). Room 11 acrescenta registros locais de batalha com migração 10 → 11, preservando o Laboratório Estelar. Recompensas são fixadas no início e pagas uma única vez em transação. O formato de backup de progresso continua v3, aceitando v2.
+O rebalanceamento de créditos/diamantes e sua comparação com custos e indústria estão em [docs/combat-balance.md](docs/combat-balance.md). Room 11 acrescenta registros locais de batalha com migração 10 → 11, preservando o Laboratório Estelar. Recompensas são fixadas no início e pagas uma única vez em transação. A auditoria de integridade posterior atualizou o backup para v4, aceitando v2 e v3.
 
 O ciclo de combate e o comportamento de cancelamento, habilidades, cooldowns e replay estão documentados em [docs/combat-cycle.md](docs/combat-cycle.md).
