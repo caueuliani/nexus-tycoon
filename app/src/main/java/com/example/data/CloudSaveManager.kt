@@ -2,10 +2,7 @@ package com.example.data
 
 import android.content.Context
 import android.util.Log
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.firebase.FirebaseApp
-import com.google.firebase.FirebaseOptions
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.FirebaseFirestore
@@ -21,17 +18,6 @@ import java.io.File
  * the full backup flow immediately in AI Studio, while keeping production code fully functional.
  */
 class CloudSaveManager(private val context: Context) {
-
-    private val prefs = context.getSharedPreferences("firebase_settings_prefs", Context.MODE_PRIVATE)
-
-    private val _customProjectId = MutableStateFlow(prefs.getString("firebase_project_id", "nexus-idle-tycoon") ?: "nexus-idle-tycoon")
-    val customProjectId: StateFlow<String> = _customProjectId
-
-    private val _customApiKey = MutableStateFlow(prefs.getString("firebase_api_key", "placeholder-api-key") ?: "placeholder-api-key")
-    val customApiKey: StateFlow<String> = _customApiKey
-
-    private val _customAppId = MutableStateFlow(prefs.getString("firebase_app_id", "1:123456789012:android:9f83ca06d8b14014") ?: "1:123456789012:android:9f83ca06d8b14014")
-    val customAppId: StateFlow<String> = _customAppId
 
     private var firebaseInitialized = false
     private var auth: FirebaseAuth? = null
@@ -49,36 +35,25 @@ class CloudSaveManager(private val context: Context) {
 
     private val _syncing = MutableStateFlow(false)
     val syncing: StateFlow<Boolean> = _syncing
+    var lastRestoreSummary: String = ""
+        private set
+
+    val isAvailable: Boolean get() = firebaseInitialized
 
     init {
-        try {
-            val pId = _customProjectId.value
-            val aKey = _customApiKey.value
-            val aId = _customAppId.value
-
-            val apps = FirebaseApp.getApps(context)
-            val app = if (apps.isEmpty()) {
-                val options = FirebaseOptions.Builder()
-                    .setApplicationId(aId)
-                    .setApiKey(aKey)
-                    .setProjectId(pId)
-                    .build()
-                FirebaseApp.initializeApp(context, options)
-            } else {
-                FirebaseApp.getInstance()
+        if (com.example.BuildConfig.FIREBASE_CONFIGURED) {
+            try {
+                val app = FirebaseApp.initializeApp(context) ?: FirebaseApp.getInstance()
+                check(app.options.projectId == com.example.BuildConfig.FIREBASE_PROJECT_ID)
+                auth = FirebaseAuth.getInstance(app)
+                db = FirebaseFirestore.getInstance(app)
+                firebaseInitialized = true
+                _userEmail.value = auth?.currentUser?.email
+            } catch (e: Exception) {
+                Log.w("CloudSaveManager", "Firebase unavailable", e)
             }
-            auth = FirebaseAuth.getInstance(app)
-            db = FirebaseFirestore.getInstance(app)
-            firebaseInitialized = true
-            _isSandboxMode.value = false // Successfully bound real Firebase
-            addLog("Firebase Inicializado (Projeto: $pId).")
-            _userEmail.value = auth?.currentUser?.email
-        } catch (e: Throwable) {
-            Log.w("CloudSaveManager", "Firebase initialization failed, falling back to Sandbox", e)
-            firebaseInitialized = false
-            _isSandboxMode.value = true
-            addLog("Firebase não configurado ou chave pendente. Inicializado no Modo Sandbox de Testes.")
         }
+        _isSandboxMode.value = false
     }
     fun addLog(msg: String) {
         val timestamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
@@ -86,27 +61,55 @@ class CloudSaveManager(private val context: Context) {
     }
 
     fun setSandboxMode(enabled: Boolean) {
+        check(com.example.BuildConfig.DEBUG) { "Sandbox is restricted to debug builds" }
+        _userEmail.value = null
         _isSandboxMode.value = enabled
-        addLog("Alterado para " + (if (enabled) "Modo Sandbox (Demonstração)" else "Modo de Produção (Google/Firebase)"))
     }
 
-    /**
-     * Executes Google Sign-In flow (Real or Sandbox)
-     */
+    // Explicit test fixture only; never used by the Google login UI.
     suspend fun handleGoogleSignInSuccess(email: String) {
-        _syncing.value = true
-        addLog("Autenticando via Google: $email...")
-        kotlinx.coroutines.delay(1000)
+        check(com.example.BuildConfig.DEBUG && _isSandboxMode.value)
         _userEmail.value = email
-        _syncing.value = false
-        addLog("Usuário conectado como $email!")
     }
 
-    fun logout() {
+    suspend fun signIn(activityContext: Context) {
+        check(isAvailable) { "Login indisponível nesta versão." }
+        _syncing.value = true
+        try {
+            val option = com.google.android.libraries.identity.googleid.GetGoogleIdOption.Builder()
+                .setServerClientId(context.getString(com.example.R.string.default_web_client_id))
+                .setFilterByAuthorizedAccounts(false)
+                .build()
+            val result = androidx.credentials.CredentialManager.create(activityContext).getCredential(
+                activityContext,
+                androidx.credentials.GetCredentialRequest.Builder().addCredentialOption(option).build()
+            )
+            val credential = result.credential
+            check(credential is androidx.credentials.CustomCredential &&
+                credential.type == com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL)
+            val token = com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.createFrom(credential.data).idToken
+            val user = auth!!.signInWithCredential(GoogleAuthProvider.getCredential(token, null)).await().user
+            check(user != null && user.email != null)
+            _userEmail.value = user.email
+        } finally {
+            _syncing.value = false
+        }
+    }
+
+    suspend fun logout() {
         if (!isSandboxMode.value && firebaseInitialized) {
             auth?.signOut()
         }
         _userEmail.value = null
+        try {
+            androidx.credentials.CredentialManager.create(context).clearCredentialState(
+                androidx.credentials.ClearCredentialStateRequest()
+            )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("CloudSaveManager", "Credential provider state could not be cleared", e)
+        }
         addLog("Sessão finalizada. Usuário desconectado.")
     }
 
@@ -119,6 +122,7 @@ class CloudSaveManager(private val context: Context) {
         onError: (String) -> Unit
     ) {
         val email = _userEmail.value
+        val sessionUid = auth?.currentUser?.uid
         if (email == null) {
             onError("Por favor, faça login com a sua conta Google primeiro.")
             return
@@ -128,13 +132,15 @@ class CloudSaveManager(private val context: Context) {
         addLog("Preparando dados das indústrias e robôs...")
 
         try {
-            val state = repository.getGameStateDirect() ?: GameState()
-            val resourcesList = repository.getResourcesDirect()
-            val buildingsList = repository.getBuildingsDirect()
-            val combatList = repository.getCombatUnitsDirect()
+            val snapshot = repository.exportBackup()
+            val state = snapshot.state
+            val resourcesList = snapshot.resources
+            val buildingsList = snapshot.buildings
+            val combatList = snapshot.combatUnits
 
             // Map data structure
             val payload = mapOf(
+                "backupVersion" to 2,
                 "companyName" to state.companyName,
                 "cash" to state.cash,
                 "starGems" to state.starGems,
@@ -156,6 +162,10 @@ class CloudSaveManager(private val context: Context) {
                 "playerRank" to state.playerRank,
                 "completedRankMissions" to state.completedRankMissions,
                 "science" to state.science,
+                "scienceProdLevel" to state.scienceProdLevel,
+                "scienceCreditsLevel" to state.scienceCreditsLevel,
+                "scienceComradeLevel" to state.scienceComradeLevel,
+                "scienceCombatLevel" to state.scienceCombatLevel,
                 "lastSavedTime" to System.currentTimeMillis(),
                 
                 "resources" to resourcesList.map { r -> mapOf("name" to r.name, "quantity" to r.quantity) },
@@ -165,6 +175,20 @@ class CloudSaveManager(private val context: Context) {
                     "productionRatePerLevel" to b.productionRatePerLevel, "resourceProduced" to b.resourceProduced,
                     "inputResource" to b.inputResource, "inputAmountPerSec" to b.inputAmountPerSec,
                     "isAutoSelling" to b.isAutoSelling
+                ) },
+                "researchers" to snapshot.researchers.map { r -> mapOf(
+                    "id" to r.id, "name" to r.name, "description" to r.description,
+                    "level" to r.level, "cardsCollected" to r.cardsCollected,
+                    "cardsNeededToUpgrade" to r.cardsNeededToUpgrade,
+                    "targetBuildingId" to r.targetBuildingId, "boostType" to r.boostType,
+                    "rarity" to r.rarity
+                ) },
+                "missions" to snapshot.missions.map { m -> mapOf(
+                    "id" to m.id, "description" to m.description, "progress" to m.progress,
+                    "target" to m.target, "isCompleted" to m.isCompleted, "isClaimed" to m.isClaimed,
+                    "missionType" to m.missionType, "targetId" to m.targetId,
+                    "targetString" to m.targetString, "rewardGems" to m.rewardGems,
+                    "rewardScience" to m.rewardScience, "rewardCapsuleType" to m.rewardCapsuleType
                 ) },
                 "combatUnits" to combatList.map { c -> mapOf(
                     "id" to c.id, "name" to c.name, "type" to c.type, "level" to c.level,
@@ -177,14 +201,14 @@ class CloudSaveManager(private val context: Context) {
                 // SANDBOX MODE: Simulate cloud writing
                 kotlinx.coroutines.delay(1800)
                 // Write locally to device storage so Sandbox Mode is fully functional across app relaunches!
-                saveDataToLocalCache(payload)
+                saveDataToLocalCache(payload, email)
                 _syncing.value = false
                 addLog("Backup salvo com sucesso na Nuvem Simulada Firestore!")
                 onSuccess()
             } else {
                 // REAL MODE: Fire up real Firestore write
                 val dbRef = db ?: throw Exception("Firestore não inicializado.")
-                dbRef.collection("users").document(email)
+                dbRef.collection("users").document(requireNotNull(sessionUid) { "Sessão expirada." })
                     .set(payload)
                     .await()
                 _syncing.value = false
@@ -208,6 +232,7 @@ class CloudSaveManager(private val context: Context) {
         onError: (String) -> Unit
     ) {
         val email = _userEmail.value
+        val sessionUid = auth?.currentUser?.uid
         if (email == null) {
             onError("Por favor, conecte-se à sua conta Google para sincronizar.")
             return
@@ -220,7 +245,7 @@ class CloudSaveManager(private val context: Context) {
             if (_isSandboxMode.value) {
                 // SANDBOX MODE: Reading from local backup cache
                 kotlinx.coroutines.delay(1500)
-                val payload = loadDataFromLocalCache()
+                val payload = loadDataFromLocalCache(email)
                 if (payload == null) {
                     _syncing.value = false
                     addLog("Nenhum backup encontrado na nuvem para esta conta.")
@@ -235,8 +260,8 @@ class CloudSaveManager(private val context: Context) {
             } else {
                 // REAL MODE: Querying Firestore
                 val dbRef = db ?: throw Exception("Firestore não inicializado.")
-                val doc = dbRef.collection("users").document(email)
-                    .get()
+                val doc = dbRef.collection("users").document(requireNotNull(sessionUid) { "Sessão expirada." })
+                    .get(com.google.firebase.firestore.Source.SERVER)
                     .await()
                 
                 if (!doc.exists()) {
@@ -246,6 +271,7 @@ class CloudSaveManager(private val context: Context) {
                     return
                 }
 
+                check(auth?.currentUser?.uid == sessionUid) { "A conta foi alterada durante a restauração." }
                 val payload = doc.data
                 if (payload == null) {
                     _syncing.value = false
@@ -267,13 +293,23 @@ class CloudSaveManager(private val context: Context) {
 
     @Suppress("UNCHECKED_CAST")
     suspend fun restoreFromPayload(repository: GameRepository, payload: Map<String, Any>) {
+        require((payload["backupVersion"] as? Number)?.toInt() == 2) {
+            "Backup antigo ou incompatível. Gere um novo backup no dispositivo de origem; o progresso local foi preservado."
+        }
+        require(listOf("resources", "buildings", "combatUnits", "researchers", "missions").all {
+            payload[it] is List<*>
+        }) { "Backup incompleto; o progresso local foi preservado." }
+        val scienceFields = listOf("scienceProdLevel", "scienceCreditsLevel", "scienceComradeLevel", "scienceCombatLevel")
+        require(scienceFields.all { payload[it] is Number && (payload[it] as Number).toInt() >= 0 }) {
+            "Pesquisas ausentes ou inválidas no backup."
+        }
         val state = GameState(
             id = 1,
             companyName = payload["companyName"] as? String ?: "Nova Core Inc",
             cash = (payload["cash"] as? Number)?.toDouble() ?: 5000.0,
-            starGems = (payload["starGems"] as? Number)?.toLong() ?: 250L,
-            nebulaCores = (payload["nebulaCores"] as? Number)?.toLong() ?: 15L,
-            guildTokens = (payload["guildTokens"] as? Number)?.toLong() ?: 50L,
+            starGems = (payload["starGems"] as? Number)?.toLong() ?: 0L,
+            nebulaCores = (payload["nebulaCores"] as? Number)?.toLong() ?: 0L,
+            guildTokens = (payload["guildTokens"] as? Number)?.toLong() ?: 0L,
             guildName = payload["guildName"] as? String ?: "No Guild",
             selectedSkinId = (payload["selectedSkinId"] as? Number)?.toInt() ?: 0,
             selectedAvatarId = (payload["selectedAvatarId"] as? Number)?.toInt() ?: 0,
@@ -289,7 +325,11 @@ class CloudSaveManager(private val context: Context) {
             comradesPerSec = (payload["comradesPerSec"] as? Number)?.toDouble() ?: 1.0,
             playerRank = (payload["playerRank"] as? Number)?.toInt() ?: 1,
             completedRankMissions = (payload["completedRankMissions"] as? Number)?.toInt() ?: 0,
-            science = (payload["science"] as? Number)?.toLong() ?: 100L,
+            science = (payload["science"] as? Number)?.toLong() ?: 0L,
+            scienceProdLevel = (payload["scienceProdLevel"] as Number).toInt(),
+            scienceCreditsLevel = (payload["scienceCreditsLevel"] as Number).toInt(),
+            scienceComradeLevel = (payload["scienceComradeLevel"] as Number).toInt(),
+            scienceCombatLevel = (payload["scienceCombatLevel"] as Number).toInt(),
             lastSavedTime = System.currentTimeMillis()
         )
 
@@ -332,26 +372,65 @@ class CloudSaveManager(private val context: Context) {
             )
         }
 
-        repository.restoreBackup(state, resources, buildings, combatUnits)
+        val researchers = (payload["researchers"] as List<Map<String, Any>>).map {
+            ResearcherCard(
+                id = (it["id"] as Number).toInt(), name = it["name"] as String,
+                description = it["description"] as String, level = (it["level"] as Number).toInt(),
+                cardsCollected = (it["cardsCollected"] as Number).toInt(),
+                cardsNeededToUpgrade = (it["cardsNeededToUpgrade"] as Number).toInt(),
+                targetBuildingId = (it["targetBuildingId"] as Number).toInt(),
+                boostType = it["boostType"] as String, rarity = it["rarity"] as String
+            )
+        }
+        val missions = (payload["missions"] as List<Map<String, Any>>).map {
+            ActiveMission(
+                id = (it["id"] as Number).toInt(), description = it["description"] as String,
+                progress = (it["progress"] as Number).toDouble(), target = (it["target"] as Number).toDouble(),
+                isCompleted = it["isCompleted"] as Boolean, isClaimed = it["isClaimed"] as Boolean,
+                missionType = it["missionType"] as String, targetId = (it["targetId"] as Number).toInt(),
+                targetString = it["targetString"] as String, rewardGems = (it["rewardGems"] as Number).toLong(),
+                rewardScience = (it["rewardScience"] as Number).toLong(), rewardCapsuleType = it["rewardCapsuleType"] as String
+            )
+        }
+        repository.restoreBackup(state, resources, buildings, combatUnits, researchers, missions)
+        lastRestoreSummary = "Níveis das fábricas (1–8): " +
+            buildings.sortedBy { it.id }.joinToString(", ") { it.level.toString() } +
+            "\nEstoques com recursos: ${resources.count { it.quantity > 0 }} de ${resources.size}."
     }
 
     // Helper functions to cache sandbox backups to local disk storage
     // so saves survive app restarts even when real Firebase is offline!
-    private fun saveDataToLocalCache(payload: Map<String, Any>) {
+    private fun sandboxBackupFile(email: String): File {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(email.trim().lowercase(java.util.Locale.ROOT).toByteArray(Charsets.UTF_8))
+        val accountId = digest.joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        return File(context.filesDir, "sandbox_backup_$accountId.json")
+    }
+
+    private fun saveDataToLocalCache(payload: Map<String, Any>, email: String) {
         try {
-            val file = File(context.cacheDir, "simulated_cloud_save.json")
+            val file = sandboxBackupFile(email)
             val jsonObject = org.json.JSONObject(payload)
-            file.writeText(jsonObject.toString())
+            val atomicFile = android.util.AtomicFile(file)
+            val stream = atomicFile.startWrite()
+            try {
+                stream.write(jsonObject.toString().toByteArray(Charsets.UTF_8))
+                atomicFile.finishWrite(stream)
+            } catch (error: Throwable) {
+                atomicFile.failWrite(stream)
+                throw error
+            }
         } catch (e: Exception) {
             Log.e("CloudSaveManager", "Error saving cached mock cloud data", e)
+            throw e
         }
     }
 
-    private fun loadDataFromLocalCache(): Map<String, Any>? {
+    private fun loadDataFromLocalCache(email: String): Map<String, Any>? {
         return try {
-            val file = File(context.cacheDir, "simulated_cloud_save.json")
-            if (!file.exists()) return null
-            val content = file.readText()
+            val file = sandboxBackupFile(email)
+            if (!file.exists() && !File(file.path + ".bak").exists()) return null
+            val content = android.util.AtomicFile(file).openRead().bufferedReader(Charsets.UTF_8).use { it.readText() }
             val jsonObject = org.json.JSONObject(content)
             val result = mutableMapOf<String, Any>()
             

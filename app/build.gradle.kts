@@ -4,7 +4,13 @@ plugins {
   alias(libs.plugins.google.devtools.ksp)
   alias(libs.plugins.roborazzi)
   alias(libs.plugins.secrets)
+  id("com.google.gms.google-services") version "4.4.4" apply false
 }
+
+val hasFirebaseConfig = file("google-services.json").isFile
+if (hasFirebaseConfig) apply(plugin = "com.google.gms.google-services")
+val productionRewardedAdUnit = providers.gradleProperty("ADMOB_REWARDED_AD_UNIT_ID").orElse("ca-app-pub-1910491454764587/7433492171").get()
+require(productionRewardedAdUnit.isEmpty() || Regex("ca-app-pub-[0-9]+/[0-9]+").matches(productionRewardedAdUnit))
 
 android {
   namespace = "com.example"
@@ -16,6 +22,9 @@ android {
     targetSdk = 36
     versionCode = 1
     versionName = "1.0"
+    buildConfigField("String", "FIREBASE_PROJECT_ID", "\"nexus-idle-tycoon\"")
+    buildConfigField("boolean", "FIREBASE_CONFIGURED", hasFirebaseConfig.toString())
+    if (!hasFirebaseConfig) resValue("string", "default_web_client_id", "")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -28,23 +37,22 @@ android {
       keyAlias = "upload"
       keyPassword = System.getenv("KEY_PASSWORD")
     }
-    create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
-    }
   }
 
   buildTypes {
+    debug {
+      manifestPlaceholders["admobAppId"] = "ca-app-pub-3940256099942544~3347511713"
+      buildConfigField("String", "ADMOB_APP_ID", "\"ca-app-pub-3940256099942544~3347511713\"")
+      buildConfigField("String", "REWARDED_AD_UNIT_ID", "\"ca-app-pub-3940256099942544/5224354917\"")
+    }
     release {
+      manifestPlaceholders["admobAppId"] = "ca-app-pub-1910491454764587~5605387336"
+      buildConfigField("String", "ADMOB_APP_ID", "\"ca-app-pub-1910491454764587~5605387336\"")
+      buildConfigField("String", "REWARDED_AD_UNIT_ID", "\"$productionRewardedAdUnit\"")
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
-    }
-    debug {
-      signingConfig = signingConfigs.getByName("debugConfig")
     }
   }
   compileOptions {
@@ -52,10 +60,18 @@ android {
     targetCompatibility = JavaVersion.VERSION_11
   }
   buildFeatures {
+    resValues = true
     compose = true
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
+}
+
+// Android 16's Robolectric runtime requires Java 21, even when compilation uses JDK 17.
+tasks.withType<Test>().configureEach {
+  javaLauncher.set(javaToolchains.launcherFor {
+    languageVersion.set(JavaLanguageVersion.of(21))
+  })
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
@@ -68,6 +84,11 @@ secrets {
 // Some unused dependencies are commented out below instead of being removed.
 // This makes it easy to add them back in the future if needed.
 dependencies {
+  implementation("androidx.credentials:credentials:1.3.0")
+  implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
+  implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+  implementation("com.google.android.libraries.ads.mobile.sdk:ads-mobile-sdk:1.5.0")
+  implementation("com.google.android.ump:user-messaging-platform:4.0.0")
   implementation(platform(libs.androidx.compose.bom))
   implementation(platform(libs.firebase.bom))
   implementation(libs.firebase.auth)

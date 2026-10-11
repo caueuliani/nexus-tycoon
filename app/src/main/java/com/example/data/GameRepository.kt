@@ -2,12 +2,22 @@ package com.example.data
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 import kotlin.math.pow
+
+data class BackupSnapshot(
+    val state: GameState,
+    val resources: List<ResourceInventory>,
+    val buildings: List<BusinessBuilding>,
+    val combatUnits: List<CombatUnit>,
+    val researchers: List<ResearcherCard>,
+    val missions: List<ActiveMission>
+)
 
 class GameRepository(private val db: GameDatabase) {
     private val dao = db.gameDao
@@ -21,15 +31,23 @@ class GameRepository(private val db: GameDatabase) {
 
     suspend fun getGameStateDirect(): GameState? = dao.getGameStateDirect()
 
-    suspend fun checkAndInitialize() = withContext(Dispatchers.IO) {
+    suspend fun checkAndInitialize() = db.withTransaction {
         val state = dao.getGameStateDirect()
         val buildingsList = dao.getBuildingsDirect()
-        if (state == null || buildingsList.size < 8) {
-            try {
-                db.clearAllTables()
-            } catch (e: Exception) {
-                android.util.Log.e("GameRepository", "db.clearAllTables() failed", e)
+        if (state != null) {
+            check(buildingsList.map { it.id }.sorted() == (1..8).toList() &&
+                dao.getResourcesDirect().size == 8 && dao.getCombatUnitsDirect().size == 4 &&
+                dao.getResearchersDirect().size == 6 && dao.getActiveMissionsDirect().isNotEmpty()) {
+                "Save incompleto. Os dados foram preservados; é necessário recuperar o backup."
             }
+            return@withTransaction
+        }
+        check(buildingsList.isEmpty() && dao.getResourcesDirect().isEmpty() &&
+            dao.getCombatUnitsDirect().isEmpty() && dao.getResearchersDirect().isEmpty() &&
+            dao.getActiveMissionsDirect().isEmpty()) {
+            "Save parcial encontrado. Os dados foram preservados."
+        }
+        if (state == null) {
             // Seed base state
             dao.saveGameState(GameState())
             
@@ -181,13 +199,13 @@ class GameRepository(private val db: GameDatabase) {
     }
 
     // Process Offline Income up to 12h
-    suspend fun processOfflineDifference(): OfflineEarnings? = withContext(Dispatchers.IO) {
-        val state = dao.getGameStateDirect() ?: return@withContext null
+    suspend fun processOfflineDifference(): OfflineEarnings? = db.withTransaction {
+        val state = dao.getGameStateDirect() ?: return@withTransaction null
         val curTime = System.currentTimeMillis()
         val diffMs = curTime - state.lastSavedTime
         if (diffMs < 10000) { // minimum 10 seconds empty
             dao.saveGameState(state.copy(lastSavedTime = curTime))
-            return@withContext null
+            return@withTransaction null
         }
 
         val maxSeconds = if (state.isSubscribed) 43200L else 28800L
@@ -203,6 +221,9 @@ class GameRepository(private val db: GameDatabase) {
         val factor = (if (state.isSubscribed) 1.5 else 1.0) * prestigeBonus
 
         val resCardList = dao.getResearchersDirect()
+        val comradeCard = resCardList.find { it.id == 5 }
+        val comradeRate = (1.0 + (if (comradeCard != null && comradeCard.level > 0) comradeCard.getBoostValue() else 0.0)) *
+            (1.0 + state.scienceComradeLevel * 0.20)
 
         // 1. Calculate production with input dependencies sequentially (upstream to downstream)
         for (building in buildingsList) {
@@ -293,10 +314,16 @@ class GameRepository(private val db: GameDatabase) {
         dao.saveResources(updatedResources)
         dao.saveGameState(state.copy(
             cash = state.cash + creditEarned,
+            comrades = state.comrades + seconds * comradeRate,
+            comradesPerSec = comradeRate,
             lastSavedTime = curTime
         ))
 
-        return@withContext OfflineEarnings(seconds, earnings, creditEarned)
+        // Report the stock remaining after downstream consumption, not gross production.
+        val netEarnings = currentResources.mapValues { (name, quantity) ->
+            (quantity - (startResources[name] ?: 0.0)).coerceAtLeast(0.0)
+        }.filterValues { it > 0.0 }
+        return@withTransaction OfflineEarnings(seconds, netEarnings, creditEarned)
     }
 
     suspend fun saveGameState(state: GameState) = withContext(Dispatchers.IO) {
@@ -424,10 +451,10 @@ class GameRepository(private val db: GameDatabase) {
         return base * (1.08.pow(currentLevel))
     }
 
-    suspend fun upgradeBuilding(buildingId: Int, multiplier: String): Boolean = withContext(Dispatchers.IO) {
-        val state = dao.getGameStateDirect() ?: return@withContext false
+    suspend fun upgradeBuilding(buildingId: Int, multiplier: String): Boolean = db.withTransaction {
+        val state = dao.getGameStateDirect() ?: return@withTransaction false
         val buildingsList = dao.getBuildingsDirect()
-        val b = buildingsList.find { it.id == buildingId } ?: return@withContext false
+        val b = buildingsList.find { it.id == buildingId } ?: return@withTransaction false
         
         val resCardList = dao.getResearchersDirect()
         val costCard = resCardList.find { it.targetBuildingId == buildingId && it.boostType == "COST_REDUCTION" }
@@ -439,46 +466,46 @@ class GameRepository(private val db: GameDatabase) {
         val levelsGained = calc.first
         val totalCost = calc.second
 
-        if (levelsGained <= 0) return@withContext false
+        if (levelsGained <= 0) return@withTransaction false
 
         if (state.cash >= totalCost) {
             dao.saveGameState(state.copy(
                 cash = state.cash - totalCost
             ))
             dao.updateBuilding(b.copy(level = b.level + levelsGained))
-            return@withContext true
+            return@withTransaction true
         }
-        return@withContext false
+        return@withTransaction false
     }
 
-    suspend fun automateBuilding(buildingId: Int, gemCost: Long): Boolean = withContext(Dispatchers.IO) {
-        val state = dao.getGameStateDirect() ?: return@withContext false
+    suspend fun automateBuilding(buildingId: Int, gemCost: Long): Boolean = db.withTransaction {
+        val state = dao.getGameStateDirect() ?: return@withTransaction false
         val buildingsList = dao.getBuildingsDirect()
-        val b = buildingsList.find { it.id == buildingId } ?: return@withContext false
+        val b = buildingsList.find { it.id == buildingId } ?: return@withTransaction false
 
-        if (state.starGems >= gemCost && !b.isAutomated) {
+        if (gemCost > 0 && b.level > 0 && state.starGems >= gemCost && !b.isAutomated) {
             dao.saveGameState(state.copy(starGems = state.starGems - gemCost))
             dao.updateBuilding(b.copy(isAutomated = true))
-            return@withContext true
+            return@withTransaction true
         }
-        return@withContext false
+        return@withTransaction false
     }
 
-    suspend fun toggleAutoSelling(buildingId: Int, autoSell: Boolean): Boolean = withContext(Dispatchers.IO) {
+    suspend fun toggleAutoSelling(buildingId: Int, autoSell: Boolean): Boolean = db.withTransaction {
         val buildingsList = dao.getBuildingsDirect()
-        val b = buildingsList.find { it.id == buildingId } ?: return@withContext false
+        val b = buildingsList.find { it.id == buildingId } ?: return@withTransaction false
         val isHighLevelResource = b.resourceProduced != "Energy Cell" && b.resourceProduced != "Iron Ore"
         if (!isHighLevelResource && autoSell) {
-            return@withContext false
+            return@withTransaction false
         }
         dao.updateBuilding(b.copy(isAutoSelling = autoSell))
-        return@withContext true
+        return@withTransaction true
     }
 
-    suspend fun upgradeCombatUnit(unitId: Int): Boolean = withContext(Dispatchers.IO) {
-        val state = dao.getGameStateDirect() ?: return@withContext false
+    suspend fun upgradeCombatUnit(unitId: Int): Boolean = db.withTransaction {
+        val state = dao.getGameStateDirect() ?: return@withTransaction false
         val unitsList = dao.getCombatUnitsDirect()
-        val u = unitsList.find { it.id == unitId } ?: return@withContext false
+        val u = unitsList.find { it.id == unitId } ?: return@withTransaction false
         
         val cost = u.upgradeCost * u.costMultiplier.pow(u.level - 1)
         if (state.cash >= cost) {
@@ -488,28 +515,29 @@ class GameRepository(private val db: GameDatabase) {
                 health = (u.health * 1.15).toInt(),
                 attack = (u.attack * 1.15).toInt()
             ))
-            return@withContext true
+            return@withTransaction true
         }
-        return@withContext false
+        return@withTransaction false
     }
 
     // Sell resources inside market
-    suspend fun sellResource(resource: String, amount: Double, pricePerUnit: Double): Boolean = withContext(Dispatchers.IO) {
-        val state = dao.getGameStateDirect() ?: return@withContext false
+    suspend fun sellResource(resource: String, amount: Double, pricePerUnit: Double): Boolean = db.withTransaction {
+        if (!amount.isFinite() || amount <= 0 || !pricePerUnit.isFinite() || pricePerUnit <= 0) return@withTransaction false
+        val state = dao.getGameStateDirect() ?: return@withTransaction false
         val resourcesList = dao.getResourcesDirect()
-        val res = resourcesList.find { it.name == resource } ?: return@withContext false
+        val res = resourcesList.find { it.name == resource } ?: return@withTransaction false
 
         if (res.quantity >= amount) {
             val earned = amount * pricePerUnit
             dao.saveResource(res.copy(quantity = res.quantity - amount))
             dao.saveGameState(state.copy(cash = state.cash + earned))
-            return@withContext true
+            return@withTransaction true
         }
-        return@withContext false
+        return@withTransaction false
     }
 
-    suspend fun addSuppliesAndCash(gemCost: Long, addedResources: Map<String, Double>, addedCash: Double): Boolean = withContext(Dispatchers.IO) {
-        val state = dao.getGameStateDirect() ?: return@withContext false
+    suspend fun addSuppliesAndCash(gemCost: Long, addedResources: Map<String, Double>, addedCash: Double): Boolean = db.withTransaction {
+        val state = dao.getGameStateDirect() ?: return@withTransaction false
         if (state.starGems >= gemCost) {
             dao.saveGameState(state.copy(
                 starGems = state.starGems - gemCost,
@@ -521,13 +549,25 @@ class GameRepository(private val db: GameDatabase) {
                 r.copy(quantity = r.quantity + add)
             }
             dao.saveResources(updated)
-            return@withContext true
+            return@withTransaction true
         }
-        return@withContext false
+        return@withTransaction false
     }
 
-    suspend fun applyTimeWarp(gemCost: Long, hours: Int): Boolean = withContext(Dispatchers.IO) {
-        val state = dao.getGameStateDirect() ?: return@withContext false
+    suspend fun exchangeCashForGems(costCoins: Double, rewardGems: Long): Boolean = db.withTransaction {
+        if (!costCoins.isFinite() || costCoins <= 0.0 || rewardGems <= 0) return@withTransaction false
+        val current = dao.getGameStateDirect() ?: return@withTransaction false
+        if (current.cash < costCoins || current.starGems > Long.MAX_VALUE - rewardGems) return@withTransaction false
+        dao.saveGameState(current.copy(
+            cash = current.cash - costCoins,
+            starGems = current.starGems + rewardGems
+        ))
+        true
+    }
+
+    suspend fun applyTimeWarp(gemCost: Long, hours: Int): Boolean = db.withTransaction {
+        if (gemCost <= 0 || hours <= 0) return@withTransaction false
+        val state = dao.getGameStateDirect() ?: return@withTransaction false
         if (state.starGems >= gemCost) {
             val buildingsList = dao.getBuildingsDirect()
             var productionPerHour = 0.0
@@ -568,21 +608,22 @@ class GameRepository(private val db: GameDatabase) {
                 cash = state.cash + totalCashGained
             ))
             dao.saveResources(updated)
-            return@withContext true
+            return@withTransaction true
         }
-        return@withContext false
+        return@withTransaction false
     }
 
     fun getPrestigeMinCash(nebulaCores: Long): Double {
-        val ascensions = (nebulaCores - 15).coerceAtLeast(0L)
-        return 100000.0 * 1.6.pow(ascensions.toDouble())
+        // First ascension at 100k; quadratic growth instead of an exponential wall.
+        return 100000.0 * (1.0 + nebulaCores.coerceAtLeast(0L) * 0.10).pow(2)
     }
 
-    suspend fun performPrestige(earnedCores: Long): Boolean = withContext(Dispatchers.IO) {
-        val state = dao.getGameStateDirect() ?: return@withContext false
+    suspend fun performPrestige(): Boolean = db.withTransaction {
+        val state = dao.getGameStateDirect() ?: return@withTransaction false
         val minCashRequired = getPrestigeMinCash(state.nebulaCores)
-        if (state.cash < minCashRequired) return@withContext false
+        if (state.cash < minCashRequired) return@withTransaction false
         
+        val earnedCores = kotlin.math.floor(kotlin.math.sqrt(state.cash / minCashRequired)).toLong()
         dao.saveGameState(state.copy(
             cash = 5000.0,
             nebulaCores = state.nebulaCores + earnedCores
@@ -706,19 +747,70 @@ class GameRepository(private val db: GameDatabase) {
             )
         ))
         
-        return@withContext true
+        return@withTransaction true
+    }
+
+    // Reads and writes of a production tick must not straddle a restore transaction.
+    suspend fun <T> runProductionTransaction(block: suspend () -> T): T = db.withTransaction { block() }
+
+    suspend fun updateProfile(avatarId: Int, skinId: Int, name: String) = db.withTransaction {
+        val current = dao.getGameStateDirect() ?: return@withTransaction
+        dao.saveGameState(current.copy(
+            selectedAvatarId = avatarId, selectedSkinId = skinId,
+            companyName = name.takeIf { it.isNotBlank() } ?: current.companyName
+        ))
+    }
+
+    suspend fun grantAdReward(token: String): Boolean = db.withTransaction {
+        require(token.isNotBlank())
+        check(dao.getGameStateDirect() != null) { "Jogo ainda não inicializado." }
+        if (dao.insertAdReward(AdRewardReceipt(token, System.currentTimeMillis())) == -1L) {
+            return@withTransaction false
+        }
+        check(dao.creditAdReward() == 1)
+        true
+    }
+
+    suspend fun exportBackup(): BackupSnapshot = db.withTransaction {
+        BackupSnapshot(
+            requireNotNull(dao.getGameStateDirect()) { "Jogo ainda não inicializado." },
+            dao.getResourcesDirect(), dao.getBuildingsDirect(), dao.getCombatUnitsDirect(),
+            dao.getResearchersDirect(), dao.getActiveMissionsDirect()
+        )
     }
 
     suspend fun restoreBackup(
         state: GameState,
         resources: List<ResourceInventory>,
         buildings: List<BusinessBuilding>,
-        combatUnits: List<CombatUnit>
-    ) = withContext(Dispatchers.IO) {
+        combatUnits: List<CombatUnit>,
+        researchers: List<ResearcherCard>,
+        missions: List<ActiveMission>
+    ) = db.withTransaction {
+        require(state.id == 1 && state.cash.isFinite() && state.cash >= 0) { "Saldo inválido no backup." }
+        require(buildings.map { it.id }.sorted() == (1..8).toList()) { "Indústrias incompletas no backup." }
+        require(researchers.map { it.id }.sorted() == (1..6).toList()) { "Cientistas incompletos no backup." }
+        require(combatUnits.map { it.id }.sorted() == (1..4).toList()) { "Unidades incompletas no backup." }
+        require(resources.size == 8 && resources.map { it.name }.toSet().size == 8 &&
+            resources.all { it.quantity.isFinite() && it.quantity >= 0 }) { "Recursos inválidos no backup." }
+        require(missions.isNotEmpty() && missions.map { it.id }.toSet().size == missions.size) { "Missões inválidas no backup." }
+        dao.clearResources()
+        dao.clearBuildings()
+        dao.clearCombatUnits()
+        dao.clearResearchers()
+        dao.clearMissions()
         dao.saveGameState(state)
         dao.saveResources(resources)
         dao.saveBuildings(buildings)
         dao.saveCombatUnits(combatUnits)
+        dao.saveResearchers(researchers)
+        dao.saveActiveMissions(missions)
+        check(dao.getBuildingsDirect() == buildings.sortedBy { it.id }) {
+            "Os níveis das fábricas não puderam ser restaurados."
+        }
+        check(dao.getResourcesDirect().sortedBy { it.name } == resources.sortedBy { it.name }) {
+            "Os estoques não puderam ser restaurados."
+        }
     }
 
     // Support functions for Researchers
@@ -737,25 +829,10 @@ class GameRepository(private val db: GameDatabase) {
 
         fun getInstance(context: Context): GameRepository {
             return INSTANCE ?: synchronized(this) {
-                val db = try {
-                    Room.databaseBuilder(
-                        context.applicationContext,
-                        GameDatabase::class.java,
-                        "nexus_tycoon.db"
-                    ).fallbackToDestructiveMigration().build()
-                } catch (e: Exception) {
-                    android.util.Log.e("GameRepository", "Failed to build database, deleting file and retrying", e)
-                    try {
-                        context.deleteDatabase("nexus_tycoon.db")
-                    } catch (err: Exception) {
-                        android.util.Log.e("GameRepository", "Failed to delete database file", err)
-                    }
-                    Room.databaseBuilder(
-                        context.applicationContext,
-                        GameDatabase::class.java,
-                        "nexus_tycoon.db"
-                    ).fallbackToDestructiveMigration().build()
-                }
+                // Unknown schema versions must fail without deleting the player's save.
+                val db = Room.databaseBuilder(
+                    context.applicationContext, GameDatabase::class.java, "nexus_tycoon.db"
+                ).addMigrations(GameDatabase.MIGRATION_8_9).build()
                 val repo = GameRepository(db)
                 INSTANCE = repo
                 repo

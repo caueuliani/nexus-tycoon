@@ -51,6 +51,7 @@ import java.util.Locale
 import kotlin.math.pow
 
 class MainActivity : ComponentActivity() {
+    val rewardedAds by lazy { com.example.ads.RewardedAdsController(this) }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -184,6 +185,13 @@ fun MainAppContent(viewModel: GameViewModel) {
     val configuration = LocalConfiguration.current
     val isWideScreen = configuration.screenWidthDp >= 600
 
+    val storageError by viewModel.storageError.collectAsStateWithLifecycle()
+    if (storageError != null) {
+        Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+            Text(storageError!!, color = AlertRed)
+        }
+        return
+    }
     if (state == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
@@ -646,6 +654,7 @@ fun IndustryTab(
                 val currentPrice = prices[building.resourceProduced] ?: 1.0
                 BuildingProductionCard(
                     building = building,
+                    inventory = resources,
                     currentCash = state.cash,
                     currentGems = state.starGems,
                     marketPrice = currentPrice,
@@ -918,15 +927,7 @@ fun MissionsDialog(
     }
 }
 
-fun formatMissionProgress(value: Double): String {
-    return when {
-        value >= 1_000_000_000_000.0 -> String.format("%.1f T", value / 1_000_000_000_000.0)
-        value >= 1_000_000_000.0 -> String.format("%.1f B", value / 1_000_000_000.0)
-        value >= 1_000_000.0 -> String.format("%.1f M", value / 1_000_000.0)
-        value >= 1_000.0 -> String.format("%.1f K", value / 1_000.0)
-        else -> String.format("%.0f", value)
-    }
-}
+fun formatMissionProgress(value: Double): String = com.example.ui.compactNumber(value)
 
 @Composable
 fun ResearchersLabDialog(
@@ -2000,15 +2001,7 @@ fun HeaderDashboardCard(
     }
 }
 
-fun formatComrades(amount: Double): String {
-    return when {
-        amount >= 1_000_000_000_000.0 -> String.format("%.2f T", amount / 1_000_000_000_000.0)
-        amount >= 1_000_000_000.0 -> String.format("%.2f B", amount / 1_000_000_000.0)
-        amount >= 1_000_000.0 -> String.format("%.2f M", amount / 1_000_000.0)
-        amount >= 1_000.0 -> String.format("%.2f K", amount / 1_000.0)
-        else -> String.format("%d", amount.toInt())
-    }
-}
+fun formatComrades(amount: Double): String = com.example.ui.compactNumber(amount)
 
 @Composable
 fun CurrencyBadge(icon: ImageVector, label: String, text: String) {
@@ -2088,6 +2081,7 @@ fun ResourceInventoryCard(resource: ResourceInventory) {
 @Composable
 fun BuildingProductionCard(
     building: BusinessBuilding,
+    inventory: List<ResourceInventory>,
     currentCash: Double,
     currentGems: Long,
     marketPrice: Double,
@@ -2131,7 +2125,12 @@ fun BuildingProductionCard(
     val energyFactor = (if (gameState?.isSubscribed == true) 1.5 else 1.0) * prestigeBonus
     
     val totalMultiplier = energyFactor * scienceProdMulti * globalSupremeMulti * localProdMulti * localSpeedMulti
-    val runsRate = building.getActualProductionRate() * totalMultiplier
+    val runsRate = building.getActualProductionRate() *
+        (if (building.isAutomated) totalMultiplier else energyFactor)
+    val inputRequired = building.inputAmountPerSec * building.level
+    val inputStock = inventory.firstOrNull { it.name == building.inputResource }?.quantity ?: 0.0
+    val hasFullInput = building.inputResource == null || inputStock >= inputRequired
+    val productionUnit = if (building.isAutomated) "/s" else "/toque"
     val isLocked = building.level == 0
 
     // High-fidelity animation loop for spinning/pulsating building gears
@@ -2235,7 +2234,11 @@ fun BuildingProductionCard(
                             }
                         }
                         Text(
-                            text = if (isLocked) "Sistemas Desconectados" else "Produzindo: ${translateText(building.resourceProduced)}",
+                            text = when {
+                                isLocked -> "Sistemas Desconectados"
+                                !building.isAutomated -> "Manual: toque em Produzir"
+                                else -> "Automática: ${translateText(building.resourceProduced)}"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = TextMuted,
                             maxLines = 1,
@@ -2300,9 +2303,9 @@ fun BuildingProductionCard(
                     ) {
                         Text(
                             text = if (building.isAutoSelling && hasAutoSellLicense) {
-                                "Rendimento: +${formatCredits(runsRate * marketPrice)} C\$/s (Auto-vendido)"
+                                "Capacidade: +${formatCredits(runsRate * marketPrice)} C\$$productionUnit (Auto-venda)"
                             } else {
-                                "Rendimento: +${formatAmount(runsRate)}/s de ${translateText(building.resourceProduced)}"
+                                "Capacidade: +${formatAmount(runsRate)}$productionUnit de ${translateText(building.resourceProduced)}"
                             },
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
@@ -2311,15 +2314,19 @@ fun BuildingProductionCard(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        if (building.inputResource != null) {
-                            Text(
-                                text = "Consome: ${formatAmount(building.inputAmountPerSec * building.level)}/s de ${translateText(building.inputResource)}",
-                                fontSize = 11.sp,
-                                color = AlertRed,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
+                    }
+                    if (building.inputResource != null) {
+                        Text(
+                            text = "Consumo: ${formatAmount(inputRequired)}$productionUnit de ${translateText(building.inputResource)}",
+                            fontSize = 11.sp,
+                            color = TextMuted
+                        )
+                        Text(
+                            text = "Estoque: ${formatAmount(inputStock)}" +
+                                if (hasFullInput) " • insumo disponível" else " • insuficiente para um ciclo completo",
+                            fontSize = 11.sp,
+                            color = if (hasFullInput) SuccessGreen else AlertRed
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(6.dp))
@@ -2399,7 +2406,7 @@ fun BuildingProductionCard(
                         ) {
                             Icon(Icons.Filled.TouchApp, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Coletar Rendimento", fontSize = 11.sp, fontWeight = FontWeight.Black)
+                            Text("Produzir", fontSize = 11.sp, fontWeight = FontWeight.Black)
                         }
 
                         Button(
@@ -2496,6 +2503,7 @@ fun BuildingProductionCard(
                     val targetLevel = building.level + levelsGained
                     Text(
                         text = if (levelsGained > 1) "Evoluir +$levelsGained (para Nív $targetLevel)" else "Evoluir para Nív $targetLevel",
+                        modifier = Modifier.weight(1f).padding(end = 8.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = TextMuted
                     )
@@ -2511,6 +2519,8 @@ fun BuildingProductionCard(
                     ) {
                         Text(
                             text = if (levelsGained > 1) "Upgrade +$levelsGained: ${formatCredits(cost)} C\$" else "Upgrade: ${formatCredits(cost)} C\$",
+                            maxLines = 1,
+                            softWrap = false,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -3688,7 +3698,6 @@ fun AscensionTab(
     val earnedCoresNow = if (showPrestigeButton) {
         kotlin.math.floor(kotlin.math.sqrt(currentCash / minCashRequired)).toLong()
     } else 0L
-    val ascensions = (state.nebulaCores - 15).coerceAtLeast(0L)
 
     var prestigeError by remember { mutableStateOf("") }
     var prestigeSuccess by remember { mutableStateOf("") }
@@ -3749,7 +3758,7 @@ fun AscensionTab(
                 
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Você já realizou $ascensions ascensões estelares.",
+                    text = "Cada core aumenta a produção em 10%. Cores e pesquisas são mantidos na ascensão.",
                     fontSize = 11.sp,
                     color = SolarGold.copy(alpha = 0.8f),
                     fontWeight = FontWeight.SemiBold
@@ -3854,6 +3863,7 @@ fun ShopAndEventTab(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        RewardedAdsCard()
         // Seasonal Event Section
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -4717,24 +4727,9 @@ fun calculateMultiUpgrade(
 }
 
 // Format double values cleanly as strings
-fun formatCredits(amount: Double): String {
-    val formatter = NumberFormat.getNumberInstance(Locale.US)
-    formatter.maximumFractionDigits = 2
-    formatter.minimumFractionDigits = 2
-    return formatter.format(amount)
-}
+fun formatCredits(amount: Double): String = com.example.ui.compactNumber(amount)
 
-fun formatAmount(amount: Double): String {
-    if (amount >= 1_000_000) {
-        return String.format("%.2fM", amount / 1_000_000.0)
-    }
-    if (amount >= 1_000) {
-        return String.format("%.1fK", amount / 1_000.0)
-    }
-    val formatter = NumberFormat.getNumberInstance(Locale.US)
-    formatter.maximumFractionDigits = 1
-    return formatter.format(amount)
-}
+fun formatAmount(amount: Double): String = com.example.ui.compactNumber(amount)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -4751,7 +4746,7 @@ fun ProfileDialog(
     var textNameInput by remember(activeState.companyName) { mutableStateOf(activeState.companyName) }
     var selectedAvatar by remember(activeState.selectedAvatarId) { mutableStateOf(activeState.selectedAvatarId) }
 
-    var customEmailInput by remember { mutableStateOf("caueuliani@gmail.com") }
+    val loginContext = androidx.compose.ui.platform.LocalContext.current
 
     var feedbackMessage by remember { mutableStateOf("") }
     var feedbackSuccess by remember { mutableStateOf(true) }
@@ -4853,29 +4848,24 @@ fun ProfileDialog(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Text(
-                            "Vincule sua conta do Google para realizar backups automáticos e acessar o seu progresso em múltiplos dispositivos.",
+                            if (viewModel.cloudSaveManager.isAvailable) "Conecte sua conta Google para salvar e restaurar seu progresso." else "O backup em nuvem ainda não está disponível nesta versão.",
                             fontSize = 11.sp,
                             color = TextMuted
                         )
-                        OutlinedTextField(
-                            value = customEmailInput,
-                            onValueChange = { customEmailInput = it },
-                            label = { Text("E-mail da Conta Google") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            leadingIcon = { Icon(Icons.Filled.Email, contentDescription = null, tint = SolarGold, modifier = Modifier.size(18.dp)) },
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = SolarGold,
-                                focusedLabelColor = SolarGold,
-                                cursorColor = SolarGold
-                            )
-                        )
                         Button(
                             onClick = {
-                                if (customEmailInput.isNotBlank()) {
-                                    viewModel.googleSignIn(customEmailInput.trim())
+                                scope.launch {
+                                    try {
+                                        viewModel.cloudSaveManager.signIn(loginContext)
+                                    } catch (e: kotlinx.coroutines.CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        feedbackSuccess = false
+                                        feedbackMessage = "Não foi possível conectar sua conta Google. Tente novamente."
+                                    }
                                 }
                             },
+                            enabled = viewModel.cloudSaveManager.isAvailable && !syncing,
                             modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.buttonColors(containerColor = SolarGold, contentColor = Color.Black),
                             shape = RoundedCornerShape(8.dp)
@@ -4955,11 +4945,11 @@ fun ProfileDialog(
                                 onClick = {
                                     viewModel.downloadFromCloud(
                                         onSuccess = {
-                                            feedbackMessage = "Progresso restaurado com sucesso da nuvem!"
+                                            feedbackMessage = "Progresso restaurado com sucesso da nuvem!\n" + viewModel.cloudSaveManager.lastRestoreSummary
                                             feedbackSuccess = true
                                         },
                                         onError = {
-                                            feedbackMessage = "Backup não encontrado."
+                                            feedbackMessage = "Falha ao restaurar: $it"
                                             feedbackSuccess = false
                                         }
                                     )

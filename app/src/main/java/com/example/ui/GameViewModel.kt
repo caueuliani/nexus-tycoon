@@ -18,23 +18,44 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = GameRepository.getInstance(application)
     val cloudSaveManager = CloudSaveManager(application)
 
+    private val _storageError = MutableStateFlow<String?>(null)
+    val storageError: StateFlow<String?> = _storageError.asStateFlow()
+
     // State flows
-    val gameState = repository.gameState.stateIn(
+    val gameState = repository.gameState.catch {
+        _storageError.value = "Não foi possível abrir o progresso. Seus dados foram preservados."
+        emit(null)
+    }.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), null
     )
-    val resources = repository.resources.stateIn(
+    val resources = repository.resources.catch {
+        _storageError.value = "Não foi possível abrir o progresso. Seus dados foram preservados."
+        emit(emptyList())
+    }.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
-    val buildings = repository.buildings.stateIn(
+    val buildings = repository.buildings.catch {
+        _storageError.value = "Não foi possível abrir o progresso. Seus dados foram preservados."
+        emit(emptyList())
+    }.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
-    val combatUnits = repository.combatUnits.stateIn(
+    val combatUnits = repository.combatUnits.catch {
+        _storageError.value = "Não foi possível abrir o progresso. Seus dados foram preservados."
+        emit(emptyList())
+    }.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
-    val researchers = repository.researchers.stateIn(
+    val researchers = repository.researchers.catch {
+        _storageError.value = "Não foi possível abrir o progresso. Seus dados foram preservados."
+        emit(emptyList())
+    }.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
-    val activeMissions = repository.activeMissions.stateIn(
+    val activeMissions = repository.activeMissions.catch {
+        _storageError.value = "Não foi possível abrir o progresso. Seus dados foram preservados."
+        emit(emptyList())
+    }.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
 
@@ -146,6 +167,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 repository.checkAndInitialize()
             } catch (e: Exception) {
                 android.util.Log.e("GameViewModel", "DB checkAndInitialize failed", e)
+                _storageError.value = "Não foi possível abrir o progresso. Seus dados foram preservados; contate o suporte para recuperar o save."
+                return@launch
             }
             
             try {
@@ -198,9 +221,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         while (true) {
             try {
                 delay(1000)
-                val activeState = repository.getGameStateDirect() ?: continue
+                repository.runProductionTransaction {
+                val activeState = repository.getGameStateDirect() ?: return@runProductionTransaction
                 val bList = repository.getBuildingsDirect()
-                if (bList.isEmpty()) continue
+                if (bList.isEmpty()) return@runProductionTransaction
 
                 // Fetch scientists / researchers list 
                 val resCardList = repository.getResearchersDirect()
@@ -352,6 +376,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     }.sortedByDescending { it.score }
                 }
                 incrementSeasonalProgress("CREDITS_REACH", nextCash)
+                }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 android.util.Log.e("GameViewModel", "Error in Resource Tick Loop: ${e.message}", e)
@@ -801,9 +826,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             onError("Você precisa de pelo menos $formatted C$ para realizar a Ascensão Estelar!")
             return
         }
-        val earnedCores = kotlin.math.floor(kotlin.math.sqrt(current.cash / minCashRequired)).toLong()
         viewModelScope.launch {
-            val success = repository.performPrestige(earnedCores)
+            val success = repository.performPrestige()
             if (success) {
                 onSuccess()
             } else {
@@ -813,14 +837,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun produceManual(buildingId: Int) {
-        val activeState = gameState.value ?: return
-        val bList = buildings.value
-        val building = bList.find { it.id == buildingId } ?: return
-        if (building.level == 0) return
-
         viewModelScope.launch {
-            // Fetch inventory map
-            val resList = resources.value
+            repository.runProductionTransaction {
+            val activeState = repository.getGameStateDirect() ?: return@runProductionTransaction
+            val building = repository.getBuildingsDirect().find { it.id == buildingId }
+                ?: return@runProductionTransaction
+            if (building.level == 0 || building.isAutomated) return@runProductionTransaction
+            val resList = repository.getResourcesDirect()
             val resMap = resList.associate { it.name to it.quantity }.toMutableMap()
 
             val prestigeBonus = 1.0 + (activeState.nebulaCores * 0.10)
@@ -864,6 +887,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     cash = activeState.cash + cashGained
                 ))
             }
+            }
         }
     }
 
@@ -884,13 +908,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     // Profile skin changing & Avatars customization
     fun customizeProfile(avatarId: Int, skinId: Int, newName: String) {
-        val current = gameState.value ?: return
         viewModelScope.launch {
-            repository.saveGameState(current.copy(
-                selectedAvatarId = avatarId,
-                selectedSkinId = skinId,
-                companyName = newName.takeIf { it.isNotBlank() } ?: current.companyName
-            ))
+            repository.updateProfile(avatarId, skinId, newName)
         }
     }
 
@@ -906,14 +925,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun buyPremiumPack(costCoins: Double, rewardGems: Long, packName: String) {
-        val current = gameState.value ?: return
-        if (current.cash >= costCoins) {
-            viewModelScope.launch {
-                repository.saveGameState(current.copy(
-                    cash = current.cash - costCoins,
-                    starGems = current.starGems + rewardGems
-                ))
-            }
+        viewModelScope.launch {
+            repository.exchangeCashForGems(costCoins, rewardGems)
         }
     }
 
@@ -958,14 +971,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun googleSignIn(email: String) {
-        viewModelScope.launch {
-            cloudSaveManager.handleGoogleSignInSuccess(email)
-        }
-    }
-
     fun logoutFromCloud() {
-        cloudSaveManager.logout()
+        viewModelScope.launch { cloudSaveManager.logout() }
     }
 
     fun uploadToCloud(onSuccess: () -> Unit, onError: (String) -> Unit) {
@@ -1247,15 +1254,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun formatCredits(amount: Double): String {
-        return when {
-            amount >= 1_000_000_000_000.0 -> String.format("%.2f T", amount / 1_000_000_000_000.0)
-            amount >= 1_000_000_000.0 -> String.format("%.2f B", amount / 1_000_000_000.0)
-            amount >= 1_000_000.0 -> String.format("%.2f M", amount / 1_000_000.0)
-            amount >= 1_000.0 -> String.format("%.2f K", amount / 1_000.0)
-            else -> String.format("%.1f", amount)
-        }
-    }
+    private fun formatCredits(amount: Double): String = compactNumber(amount)
 }
 
 // Sealed status class for active fights

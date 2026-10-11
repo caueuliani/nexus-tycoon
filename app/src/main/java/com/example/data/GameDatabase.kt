@@ -9,9 +9,9 @@ data class GameState(
     @PrimaryKey val id: Int = 1,
     val companyName: String = "Nova Core Inc",
     val cash: Double = 5000.0,
-    val starGems: Long = 250,
-    val nebulaCores: Long = 15,
-    val guildTokens: Long = 50,
+    val starGems: Long = 0,
+    val nebulaCores: Long = 0,
+    val guildTokens: Long = 0,
     val guildName: String = "No Guild Joined",
     val selectedSkinId: Int = 0, // 0: Industrial Blue, 1: Solar Flare Gold, 2: Cyber Purple Neon
     val selectedAvatarId: Int = 0, // 0: Engineer, 1: Commander, 2: Cyborg
@@ -28,7 +28,7 @@ data class GameState(
     val comradesPerSec: Double = 1.0,
     val playerRank: Int = 1,
     val completedRankMissions: Int = 0,
-    val science: Long = 100,
+    val science: Long = 0,
     val scienceProdLevel: Int = 0,
     val scienceCreditsLevel: Int = 0,
     val scienceComradeLevel: Int = 0,
@@ -155,8 +155,32 @@ data class CombatUnit(
     val costMultiplier: Double = 1.3
 )
 
+@Entity(tableName = "ad_reward_receipts")
+data class AdRewardReceipt(@PrimaryKey val token: String, val rewardedAt: Long)
+
 @Dao
 interface GameDao {
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAdReward(receipt: AdRewardReceipt): Long
+
+    @Query("UPDATE game_state SET starGems = starGems + 5 WHERE id = 1")
+    suspend fun creditAdReward(): Int
+
+    @Query("DELETE FROM resources")
+    suspend fun clearResources()
+
+    @Query("DELETE FROM buildings")
+    suspend fun clearBuildings()
+
+    @Query("DELETE FROM combat_units")
+    suspend fun clearCombatUnits()
+
+    @Query("DELETE FROM researchers")
+    suspend fun clearResearchers()
+
+    @Query("DELETE FROM active_missions")
+    suspend fun clearMissions()
+
     @Query("SELECT * FROM game_state WHERE id = 1 LIMIT 1")
     fun getGameStateFlow(): Flow<GameState?>
 
@@ -239,11 +263,19 @@ interface GameDao {
         BusinessBuilding::class,
         CombatUnit::class,
         ResearcherCard::class,
-        ActiveMission::class
+        ActiveMission::class,
+        AdRewardReceipt::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class GameDatabase : RoomDatabase() {
+    companion object {
+        val MIGRATION_8_9 = object : androidx.room.migration.Migration(8, 9) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `ad_reward_receipts` (`token` TEXT NOT NULL, `rewardedAt` INTEGER NOT NULL, PRIMARY KEY(`token`))")
+            }
+        }
+    }
     abstract val gameDao: GameDao
 }
