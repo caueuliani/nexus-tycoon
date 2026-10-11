@@ -479,7 +479,7 @@ fun IndustryTab(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Benefícios inclusos:\n• Conversão automática direta 1:1 com base no preço atual de mercado\n• Geração de créditos idle em segundo plano e progresso offline\n• Pagamento único (R$ 14,90)",
+                        "Benefícios inclusos:\n• Conversão automática direta 1:1 com base no preço atual de mercado\n• Geração de créditos idle em segundo plano e progresso offline\n• Demonstração gratuita no debug; pagamento real ainda indisponível",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextWhite
                     )
@@ -491,9 +491,10 @@ fun IndustryTab(
                         viewModel.buyAutoSellLicense()
                         showAutoSellDialog = false
                     },
+                    enabled = BuildConfig.DEBUG,
                     colors = ButtonDefaults.buttonColors(containerColor = SolarGold, contentColor = Color.Black)
                 ) {
-                    Text("Comprar por R$ 14,90", fontWeight = FontWeight.Black)
+                    Text(if (BuildConfig.DEBUG) "Ativar demo gratuita" else "Compras indisponíveis", fontWeight = FontWeight.Black)
                 }
             },
             dismissButton = {
@@ -3955,6 +3956,7 @@ fun ShopAndEventTab(
         }
 
         Text("Loja Estelar & Assinaturas Premium", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text("Compras reais ainda não integradas. Demonstrações gratuitas disponíveis apenas no debug.", fontSize = 12.sp, color = TextMuted)
 
         // VIP Subscription purchase
         Card(
@@ -3984,14 +3986,15 @@ fun ShopAndEventTab(
                 if (!state.isSubscribed) {
                     Button(
                         onClick = { viewModel.buySubscription() },
+                        enabled = BuildConfig.DEBUG,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("Ativar Assinatura VIP (FREE Promo)", fontWeight = FontWeight.Black)
+                        Text(if (BuildConfig.DEBUG) "Ativar VIP de demonstração" else "Assinatura indisponível", fontWeight = FontWeight.Black)
                     }
                 } else {
                     Text(
-                        "Obrigado por apoiar nosso desenvolvimento! Benefícios VIP aplicados.",
+                        "Benefícios locais ativos. Esta tela não comprova uma assinatura paga.",
                         color = SolarGold,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
@@ -4028,11 +4031,12 @@ fun ShopAndEventTab(
                 if (!state.hasAutoSellLicense) {
                     Button(
                         onClick = { viewModel.buyAutoSellLicense() },
+                        enabled = BuildConfig.DEBUG,
                         colors = ButtonDefaults.buttonColors(containerColor = SolarGold, contentColor = Color.Black),
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("Adquirir Licença Comercial (R$ 14,90)", fontWeight = FontWeight.Black)
+                        Text(if (BuildConfig.DEBUG) "Ativar licença de demonstração" else "Compras indisponíveis", fontWeight = FontWeight.Black)
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))

@@ -5,6 +5,7 @@ import kotlin.random.Random
 
 // Transactions own the fresh reads and all writes. UI callbacks run after commit.
 suspend fun GameRepository.buyAutoSellLicense() {
+    if (!com.example.BuildConfig.DEBUG) return // Demo grants must never act as production purchases.
     val notifications = mutableListOf<() -> Unit>()
     runProgressTransaction {
         val current = getGameStateDirect() ?: return@runProgressTransaction
@@ -37,6 +38,7 @@ suspend fun GameRepository.buyAutoSellLicenseWithGems(onSuccess: () -> Unit, onE
 }
 
 suspend fun GameRepository.buySubscription() {
+    if (!com.example.BuildConfig.DEBUG) return // Demo grants must never act as production purchases.
     val notifications = mutableListOf<() -> Unit>()
     runProgressTransaction {
         val current = getGameStateDirect() ?: return@runProgressTransaction
