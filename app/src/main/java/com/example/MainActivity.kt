@@ -3312,7 +3312,7 @@ fun MarketTab(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "Multijogador Competitivo (Valor de Capital Corporativo)",
+                    text = "Ranking simulado local (sem multijogador online)",
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.primary
@@ -3378,7 +3378,7 @@ fun GuildTab(
                     color = NeonMagenta
                 )
                 Text(
-                    "Participe de guildas para colaborar na produção industrial da galáxia e ganhar bônus exclusivos.",
+                    "Demonstração local de guildas. Não há outros jogadores conectados.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextMuted
                 )
@@ -3434,7 +3434,7 @@ fun GuildTab(
                             Text("Sua Guilda ativa:", fontSize = 11.sp, color = TextMuted)
                             Text(state.guildName, fontWeight = FontWeight.Black, fontSize = 20.sp, color = NeonCyan)
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text("Bônus cooperativo ativo: +20% extra em missões de guilda.", fontSize = 12.sp, color = SuccessGreen)
+                            Text("Missões simuladas; sem bônus cooperativo real.", fontSize = 12.sp, color = SuccessGreen)
                         }
                         Button(
                             onClick = { viewModel.joinGuild("No Guild Joined") },
