@@ -2530,7 +2530,33 @@ fun CombatTab(
     state: GameState,
     combatUnits: List<CombatUnit>
 ) {
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) viewModel.closeBattle()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            viewModel.closeBattle()
+        }
+    }
+    var replayToShow by remember { mutableStateOf<CombatReplay?>(null) }
+    replayToShow?.let { replay ->
+        AlertDialog(
+            onDismissRequest = { replayToShow = null },
+            title = { Text("${replay.stageName} ? ${if (replay.cancelled) "Cancelado" else if (replay.victory) "Vit?ria" else "Derrota"}") },
+            text = {
+                Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
+                    Text("${replay.roundsCount} rodadas")
+                    replay.logsSnapshot.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+                }
+            },
+            confirmButton = { TextButton(onClick = { replayToShow = null }) { Text("Fechar") } }
+        )
+    }
     val isCombatActive by viewModel.combatActive.collectAsStateWithLifecycle()
+    androidx.activity.compose.BackHandler(enabled = isCombatActive) { viewModel.closeBattle() }
     val combatStatus by viewModel.combatStatus.collectAsStateWithLifecycle()
     val battleState by viewModel.liveCombatStats.collectAsStateWithLifecycle()
     val logs by viewModel.combatLogs.collectAsStateWithLifecycle()
@@ -2720,15 +2746,14 @@ fun CombatTab(
                         Spacer(modifier = Modifier.height(10.dp))
                         Button(
                             onClick = {
-                                // Simulate replay trigger by posting logs
-                                viewModel.startCombatBattle(viewModel.selectedStage.value)
+                                replayToShow = lastReplay
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
                             shape = RoundedCornerShape(6.dp)
                         ) {
                             Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Reassistir Clipe de Replay", fontSize = 11.sp)
+                            Text("Ver registro da batalha", fontSize = 11.sp)
                         }
                     }
                 }

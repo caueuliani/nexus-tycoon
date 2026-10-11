@@ -100,15 +100,16 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     )
     val marketTrends: StateFlow<Map<String, String>> = _marketTrends.asStateFlow()
 
-    // Combat game state
-    private val _combatActive = MutableStateFlow(false)
-    val combatActive: StateFlow<Boolean> = _combatActive.asStateFlow()
-
-    private val _combatLogs = MutableStateFlow<List<String>>(emptyList())
-    val combatLogs: StateFlow<List<String>> = _combatLogs.asStateFlow()
-
-    private val _combatStatus = MutableStateFlow<CombatStatus>(CombatStatus.Idle)
-    val combatStatus: StateFlow<CombatStatus> = _combatStatus.asStateFlow()
+    private val combat = CombatEngine(viewModelScope, ::prepareBattle, repository::completeCombat, ::recordCombatVictory)
+    val combatActive = combat.active
+    val combatLogs = combat.logs
+    val combatStatus = combat.status
+    val liveCombatStats = combat.live
+    val selectedStage = combat.selected
+    val shieldCooldown = combat.shieldCooldown
+    val beamCooldown = combat.beamCooldown
+    val overchargeCooldown = combat.healCooldown
+    val lastCombatReplay = combat.replay
 
     val combatStages = listOf(
         CombatStage(1, "Scout Outpost", 350, 40, "Sol Star Core"),
@@ -116,19 +117,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         CombatStage(3, "Nebula Trading Port", 1800, 280, "Plasma Coil Node"),
         CombatStage(4, "Deep Sector Command", 4500, 750, "Nova Singularity Core")
     )
-
-    private val _selectedStage = MutableStateFlow(1)
-    val selectedStage: StateFlow<Int> = _selectedStage.asStateFlow()
-
-    // Tactical Active Skills CD / State
-    private val _shieldCooldown = MutableStateFlow(0) // seconds remaining
-    val shieldCooldown: StateFlow<Int> = _shieldCooldown.asStateFlow()
-
-    private val _beamCooldown = MutableStateFlow(0)
-    val beamCooldown: StateFlow<Int> = _beamCooldown.asStateFlow()
-
-    private val _overchargeCooldown = MutableStateFlow(0)
-    val overchargeCooldown: StateFlow<Int> = _overchargeCooldown.asStateFlow()
 
     // Guild and Seasonal Missions State
     private val _guildMissions = MutableStateFlow(listOf(
@@ -160,8 +148,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     val globalTradeStandings: StateFlow<List<LeaderboardEntry>> = _globalTradeStandings.asStateFlow()
 
     // Last combat replay info
-    private val _lastCombatReplay = MutableStateFlow<CombatReplay?>(null)
-    val lastCombatReplay: StateFlow<CombatReplay?> = _lastCombatReplay.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -206,13 +192,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     android.util.Log.e("GameViewModel", "startMissionsProgressTracker failed", e)
                 }
             }
-            launch {
-                try {
-                    startCombatSkillCooldownLoop()
-                } catch (e: Exception) {
-                    android.util.Log.e("GameViewModel", "startCombatSkillCooldownLoop failed", e)
-                }
-            }
+
         }
     }
 
@@ -453,20 +433,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun startCombatSkillCooldownLoop() {
-        while (true) {
-            try {
-                delay(1000)
-                _shieldCooldown.update { if (it > 0) it - 1 else 0 }
-                _beamCooldown.update { if (it > 0) it - 1 else 0 }
-                _overchargeCooldown.update { if (it > 0) it - 1 else 0 }
-            } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
-                android.util.Log.e("GameViewModel", "Error in combat skill cooldown loop iteration", e)
-            }
-        }
-    }
-
     private fun incrementSeasonalProgress(key: String, amount: Double) {
         val currentEvent = _seasonalChampionship.value
         val list = currentEvent.tasks.map { task ->
@@ -500,171 +466,27 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    val liveCombatStats = MutableStateFlow<ActiveBattleState?>(null)
-
-    // User triggers Combat Mission Stage
-    private var battleJob: kotlinx.coroutines.Job? = null
-
-    fun startCombatBattle(stageId: Int) {
-        if (_combatActive.value) return
-        val stage = combatStages.find { it.id == stageId } ?: return
-        _combatActive.value = true
-        battleJob = viewModelScope.launch {
-            val ticket = repository.beginCombat(stageId)
-            if (ticket == null) { _combatActive.value = false; return@launch }
-            val state = repository.getGameStateDirect() ?: return@launch
-            val completedCount = ticket.enemyLevel - 1
-
-            val scaleHp = 1.0 + 0.15 * completedCount
-            val scaleDmg = 1.0 + 0.12 * completedCount
-            val scaledEnemyHp = (stage.enemyHp * scaleHp).toInt()
-            val scaledEnemyDmg = (stage.enemyDmg * scaleDmg).toInt()
-
-            val scienceCombatMulti = 1.0 + (state.scienceCombatLevel * 0.15)
-            val units = repository.getCombatUnitsDirect()
-            val totalHealth = (units.sumOf { it.health } * scienceCombatMulti).toInt()
-            val totalAttack = (units.sumOf { it.attack } * scienceCombatMulti).toInt()
-
-            if (totalHealth == 0) {
-                _combatLogs.value = listOf("Deploy error: Hire units in barracks first.")
-                repository.completeCombat(ticket.id, false)
-                _combatActive.value = false
-                return@launch
-            }
-
-            _selectedStage.value = stageId
-            _combatActive.value = true
-            _combatLogs.value = listOf(
-                "INITIATING MISSION: ${stage.name} (Nível de Ameaça: ${completedCount + 1})...",
-                "Deploying Security squad... Total HP: $totalHealth, Attack Power: $totalAttack",
-                "Enemy threat spotted: Raider Vanguard HP: $scaledEnemyHp, Power: $scaledEnemyDmg"
-            )
-
-            val battleState = ActiveBattleState(
-                battle = ticket,
-                stageId = stageId,
-                allyHp = totalHealth,
-                allyMaxHp = totalHealth,
-                allyDmg = totalAttack,
-                enemyHp = scaledEnemyHp,
-                enemyMaxHp = scaledEnemyHp,
-                enemyDmg = scaledEnemyDmg,
-                round = 1,
-                isShieldActive = false
-            )
-            liveCombatStats.value = battleState
-            _combatStatus.value = CombatStatus.Running
-
-            runBattleLoop(battleState)
-        }
+    private suspend fun prepareBattle(stage: CombatStage): ActiveBattleState? {
+        val ticket = repository.beginCombat(stage.id) ?: return null
+        val state = repository.getGameStateDirect() ?: return null
+        val units = repository.getCombatUnitsDirect()
+        val multi = 1.0 + state.scienceCombatLevel * 0.15
+        val hp = (units.sumOf { it.health } * multi).toInt()
+        if (hp <= 0) { repository.completeCombat(ticket.id, false); return null }
+        val previous = ticket.enemyLevel - 1
+        val enemyHp = (stage.enemyHp * (1.0 + 0.15 * previous)).toInt()
+        return ActiveBattleState(ticket, stage.id, hp, hp, (units.sumOf { it.attack } * multi).toInt(),
+            enemyHp, enemyHp, (stage.enemyDmg * (1.0 + 0.12 * previous)).toInt(), 1, false)
     }
 
-    private suspend fun runBattleLoop(state: ActiveBattleState) {
-        var current = state
-        while (current.allyHp > 0 && current.enemyHp > 0 && _combatActive.value) {
-            delay(1500) // combat round speed
-            if (!_combatActive.value || _combatStatus.value != CombatStatus.Running || liveCombatStats.value?.battle?.id != state.battle.id) return
-            val roundLogs = mutableListOf<String>()
-            
-            // Player attacks Enemy
-            val damageToEnemy = (current.allyDmg * Random.nextDouble(0.85, 1.15)).toInt()
-            val newEnemyHp = max(0, current.enemyHp - damageToEnemy)
-            roundLogs.add("• Ally squad attacks doing $damageToEnemy DMG!")
-            
-            // Counter check
-            if (newEnemyHp <= 0) {
-                roundLogs.add("🏆 Raider vanguard neutralized!")
-                _combatLogs.update { it + roundLogs }
-                current = current.copy(enemyHp = 0, round = current.round + 1)
-                liveCombatStats.value = current
-                handleBattleVictory(current.battle)
-                break
-            }
+    fun startCombatBattle(stageId: Int) { combatStages.find { it.id == stageId }?.let { combat.start(it) } }
+    fun triggerShieldSkill() { combat.shield() }
+    fun triggerLaserStrikeSkill() { combat.laser() }
+    fun triggerOverchargeHealSkill() { combat.heal() }
+    fun closeBattle() { combat.close() }
+    override fun onCleared() { combat.close(); super.onCleared() }
 
-            // Enemy attacks Player (shield blocks major part)
-            val baseEnemyDmg = (current.enemyDmg * Random.nextDouble(0.9, 1.1)).toInt()
-            val finalEnemyDmg = if (current.isShieldActive) {
-                roundLogs.add("🛡️ Shield absorb activated! Deflecting 80% damage!")
-                (baseEnemyDmg * 0.2).toInt()
-            } else {
-                baseEnemyDmg
-            }
-            
-            val newAllyHp = max(0, current.allyHp - finalEnemyDmg)
-            roundLogs.add("⚡ Raiders retaliate! Inflicting $finalEnemyDmg DMG to squad!")
-
-            if (newAllyHp <= 0) {
-                roundLogs.add("❌ Tactical squad retreated! Units damaged. Upgrade base defenses.")
-                _combatLogs.update { it + roundLogs }
-                current = current.copy(allyHp = 0, round = current.round + 1)
-                liveCombatStats.value = current
-                repository.completeCombat(current.battle.id, false)
-                _combatStatus.value = CombatStatus.Defeated
-                saveCombatReplay(current, victory = false)
-                break
-            }
-
-            // Reset shield status after the turn it was active
-            current = current.copy(
-                allyHp = newAllyHp,
-                enemyHp = newEnemyHp,
-                round = current.round + 1,
-                isShieldActive = false
-            )
-            liveCombatStats.value = current
-            _combatLogs.update { it + roundLogs }
-        }
-    }
-
-    // Play active Strategic tactical skills
-    fun triggerShieldSkill() {
-        if (_shieldCooldown.value > 0) return
-        val current = liveCombatStats.value ?: return
-        
-        liveCombatStats.value = current.copy(isShieldActive = true)
-        _shieldCooldown.value = 10 // 10s cooldown
-        _combatLogs.update { it + "► Tactical Action: DEFENSIVE ENERGY SHIELD DEPLOYED!" }
-    }
-
-    fun triggerLaserStrikeSkill() {
-        if (_beamCooldown.value > 0) return
-        val current = liveCombatStats.value ?: return
-        
-        val blastDmg = current.allyDmg * 2
-        val nextEnemyHp = max(0, current.enemyHp - blastDmg)
-        liveCombatStats.value = current.copy(enemyHp = nextEnemyHp)
-        _beamCooldown.value = 14 // 14s CD
-        _combatLogs.update { it + "► Tactical Action: ORBITAL ION LASER STRIKE! Deals $blastDmg DMG!" }
-
-        if (nextEnemyHp <= 0) {
-            viewModelScope.launch {
-                handleBattleVictory(current.battle)
-            }
-        }
-    }
-
-    fun triggerOverchargeHealSkill() {
-        if (_overchargeCooldown.value > 0) return
-        val current = liveCombatStats.value ?: return
-        
-        val healAmt = (current.allyMaxHp * 0.4).toInt()
-        val nextAllyHp = min(current.allyMaxHp, current.allyHp + healAmt)
-        liveCombatStats.value = current.copy(allyHp = nextAllyHp)
-        _overchargeCooldown.value = 18 // 18s CD
-        _combatLogs.update { it + "► Tactical Action: NANITE AUTO-REPAIR SYSTEM. Restored $healAmt HP!" }
-    }
-
-    private suspend fun handleBattleVictory(battle: CombatBattle) {
-        val reward = repository.completeCombat(battle.id, true) ?: return
-        if (liveCombatStats.value?.battle?.id != battle.id) return
-        _combatStatus.value = CombatStatus.Victory(reward.credits, reward.diamonds, reward.guildTokens)
-
-        // Save the replay details
-        val finalState = liveCombatStats.value
-        if (finalState != null) {
-            saveCombatReplay(finalState, victory = true)
-        }
-
+    private fun recordCombatVictory() {
         // Track missions progress
         _guildMissions.update { current ->
             current.map { m ->
@@ -682,24 +504,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             } else task
         }.toMutableList()
         _seasonalChampionship.value = currentEvent.copy(tasks = list)
-    }
-
-    private fun saveCombatReplay(state: ActiveBattleState, victory: Boolean) {
-        val replay = CombatReplay(
-            stageName = combatStages.find { it.id == state.stageId }?.name ?: "Unknown Stage",
-            roundsCount = state.round - 1,
-            victory = victory,
-            logsSnapshot = _combatLogs.value,
-            timestamp = System.currentTimeMillis()
-        )
-        _lastCombatReplay.value = replay
-    }
-
-    fun closeBattle() {
-        battleJob?.cancel()
-        _combatActive.value = false
-        _combatStatus.value = CombatStatus.Idle
-        liveCombatStats.value = null
     }
 
     // Upgrades handlers
@@ -1234,6 +1038,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 sealed class CombatStatus {
     object Idle : CombatStatus()
     object Running : CombatStatus()
+    object Resolving : CombatStatus()
+    object Failed : CombatStatus()
     data class Victory(val credits: Double, val gems: Long, val guildTokens: Long) : CombatStatus()
     object Defeated : CombatStatus()
 }
@@ -1270,7 +1076,8 @@ data class CombatReplay(
     val roundsCount: Int,
     val victory: Boolean,
     val logsSnapshot: List<String>,
-    val timestamp: Long
+    val timestamp: Long,
+    val cancelled: Boolean = false
 )
 
 // Guild goals

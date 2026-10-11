@@ -124,4 +124,24 @@ class CombatRewardsTest {
             assertEquals(95L,paid.availableCores)
         }finally{db.close();context.deleteDatabase(name)}
     }
+
+    @Test fun cancelledPaymentWaitingForProductionTransactionCannotAwardLater() = runBlocking {
+        val db = memory()
+        try {
+            val repo = GameRepository(db); repo.checkAndInitialize()
+            val ticket = repo.beginCombat(1)!!
+            val before = repo.getGameStateDirect()!!
+            val entered = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+            val production = launch(Dispatchers.Default) {
+                repo.runProductionTransaction { entered.complete(Unit); release.await() }
+            }
+            entered.await()
+            val payment = launch(Dispatchers.Default) { repo.completeCombat(ticket.id, true) }
+            payment.cancelAndJoin()
+            release.complete(Unit); production.join()
+            repo.completeCombat(ticket.id, false)
+            assertEquals(before, repo.getGameStateDirect())
+            assertNull(repo.completeCombat(ticket.id, true))
+        } finally { db.close() }
+    }
 }

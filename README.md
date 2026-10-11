@@ -76,3 +76,5 @@ Validação desta implementação (10/10/2026): assembleDebug, testDebugUnitTest
 ## Mineração hostil
 
 O rebalanceamento de créditos/diamantes e sua comparação com custos e indústria estão em [docs/combat-balance.md](docs/combat-balance.md). Room 11 acrescenta registros locais de batalha com migração 10 → 11, preservando o Laboratório Estelar. Recompensas são fixadas no início e pagas uma única vez em transação. O formato de backup de progresso continua v3, aceitando v2.
+
+O ciclo de combate e o comportamento de cancelamento, habilidades, cooldowns e replay estão documentados em [docs/combat-cycle.md](docs/combat-cycle.md).
