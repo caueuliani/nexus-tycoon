@@ -63,7 +63,7 @@ class StellarLabTest {
         try {
             val repo = GameRepository(db); repo.checkAndInitialize()
             for (mode in listOf("x1", "x5", "x10", "MAX")) {
-                db.gameDao.saveGameState(repo.getGameStateDirect()!!.copy(cash = 100000.0, industrialEngineeringLevel = 10, tacticalLogisticsLevel = 10))
+                db.gameDao.saveGameState(repo.getGameStateDirect()!!.copy(cash = 100000.0, nebulaCores = StellarUpgrade.INDUSTRIAL.costs.sum() + StellarUpgrade.TACTICAL.costs.sum(), availableCores = 0, industrialEngineeringLevel = 10, tacticalLogisticsLevel = 10))
                 val state = repo.getGameStateDirect()!!
                 val b = repo.getBuildingsDirect().first()
                 val scientists = repo.getResearchersDirect()
@@ -91,11 +91,11 @@ class StellarLabTest {
             val db = memory()
             try {
                 val repo = GameRepository(db); repo.checkAndInitialize()
-                db.gameDao.saveGameState(repo.getGameStateDirect()!!.copy(isSubscribed = vip, offlineReserveLevel = 4, lastSavedTime = System.currentTimeMillis() - 24 * 3600000L))
+                db.gameDao.saveGameState(repo.getGameStateDirect()!!.copy(isSubscribed = vip, nebulaCores = StellarUpgrade.OFFLINE.costs.sum(), availableCores = 0, offlineReserveLevel = 4, lastSavedTime = System.currentTimeMillis() - 24 * 3600000L))
                 val report = repo.processOfflineDifference()!!
                 val seconds = (if (vip) 16 else 12) * 3600L
                 assertEquals(seconds, report.offlineSeconds)
-                assertEquals(2.0 * seconds * (if (vip) 1.5 else 1.0), report.resourcesEarned["Energy Cell"]!!, 1e-6)
+                assertEquals(2.0 * seconds * (if (vip) 1.5 else 1.0) * (1.0 + StellarUpgrade.OFFLINE.costs.sum() * 0.10), report.resourcesEarned["Energy Cell"]!!, 1e-6)
                 val inventory = repo.getResourcesDirect()
                 assertNull(repo.processOfflineDifference())
                 assertEquals(inventory, repo.getResourcesDirect())
@@ -136,7 +136,7 @@ class StellarLabTest {
             val snapshot = repo.exportBackup()
             val cloud = CloudSaveManager(context)
             val payload = cloud.createBackupPayload(snapshot)
-            assertEquals(3, payload["backupVersion"])
+            assertEquals(4, payload["backupVersion"])
             cloud.restoreFromPayload(repo, payload)
             assertEquals(snapshot.state.copy(lastSavedTime = repo.getGameStateDirect()!!.lastSavedTime), repo.getGameStateDirect())
             assertFalse(repo.claimCoreEvent("Energy Supplier", true))

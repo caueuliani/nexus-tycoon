@@ -88,7 +88,11 @@ class CombatEngineTest {
         assertTrue(engine.start(stage));assertFalse(engine.start(stage));runCurrent()
         assertEquals(1,preparations);assertFalse(engine.laser())
         gate.complete(Unit);runCurrent()
-        val accepted=List(20){async(Dispatchers.Default){engine.laser()}}.awaitAll()
+        // Keep virtual rounds/cooldowns paused while real threads contend for the lock.
+        // Suspending the test on awaitAll lets runTest advance to the battle's defeat.
+        val accepted = runBlocking(Dispatchers.Default) {
+            List(20) { async { engine.laser() } }.awaitAll()
+        }
         assertEquals(1,accepted.count{it});assertEquals(980,engine.live.value!!.enemyHp)
         engine.close();runCurrent();assertTrue(engine.start(stage));runCurrent()
         assertEquals(2,preparations)

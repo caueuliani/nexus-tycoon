@@ -3,6 +3,7 @@ package com.example.data
 import android.content.Context
 import androidx.room.Room
 import androidx.room.withTransaction
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
@@ -16,11 +17,17 @@ data class BackupSnapshot(
     val buildings: List<BusinessBuilding>,
     val combatUnits: List<CombatUnit>,
     val researchers: List<ResearcherCard>,
-    val missions: List<ActiveMission>
+    val missions: List<ActiveMission>,
+    val adReceipts: List<AdRewardReceipt> = emptyList()
 )
 
 class GameRepository(private val db: GameDatabase) {
     private val dao = db.gameDao
+
+    private suspend fun saveValidatedState(state: GameState) {
+        BackupValidation.state(state)
+        dao.saveGameState(state)
+    }
 
     val gameState: Flow<GameState?> = dao.getGameStateFlow()
     val resources: Flow<List<ResourceInventory>> = dao.getResourcesFlow()
@@ -49,7 +56,7 @@ class GameRepository(private val db: GameDatabase) {
         }
         if (state == null) {
             // Seed base state
-            dao.saveGameState(GameState())
+            saveValidatedState(GameState())
             
             // Seed Resources
             dao.saveResources(listOf(
@@ -199,138 +206,50 @@ class GameRepository(private val db: GameDatabase) {
     }
 
     // Process Offline Income up to 12h
-    suspend fun processOfflineDifference(): OfflineEarnings? = db.withTransaction {
+    suspend fun processOfflineDifference(curTime: Long = System.currentTimeMillis()): OfflineEarnings? = db.withTransaction {
         val state = dao.getGameStateDirect() ?: return@withTransaction null
-        val curTime = System.currentTimeMillis()
+        require(curTime >= 0)
+        if (curTime <= state.lastSavedTime) return@withTransaction null
         val diffMs = curTime - state.lastSavedTime
         if (diffMs < 10000) { // minimum 10 seconds empty
-            dao.saveGameState(state.copy(lastSavedTime = curTime))
+            saveValidatedState(state.copy(lastSavedTime = curTime))
             return@withTransaction null
         }
 
         val maxSeconds = StellarLab.offlineHours(state) * 3600L
         val seconds = (diffMs / 1000).coerceAtMost(maxSeconds) // max 12h para VIP, 8h para padrão
-        val buildingsList = dao.getBuildingsDirect()
-        val currentResources = dao.getResourcesDirect().associate { it.name to it.quantity }.toMutableMap()
-
-        val startResources = currentResources.toMap()
-        val earnings = mutableMapOf<String, Double>()
-        var creditEarned = 0.0
-        val tempProducedMap = mutableMapOf<Int, Double>()
-        val prestigeBonus = 1.0 + (state.nebulaCores * 0.10)
-        val factor = (if (state.isSubscribed) 1.5 else 1.0) * prestigeBonus
-
-        val resCardList = dao.getResearchersDirect()
-        val comradeCard = resCardList.find { it.id == 5 }
-        val comradeRate = (1.0 + (if (comradeCard != null && comradeCard.level > 0) comradeCard.getBoostValue() else 0.0)) *
-            (1.0 + state.scienceComradeLevel * 0.20)
-
-        // 1. Calculate production with input dependencies sequentially (upstream to downstream)
-        for (building in buildingsList) {
-            if (building.level == 0 || !building.isAutomated) continue
-            
-            // --- Scientist/Researcher multipliers ---
-            // a) Global supreme boost (ID 6)
-            val globalSupremeCard = resCardList.find { it.id == 6 }
-            val globalSupremeMulti = 1.0 + (if (globalSupremeCard != null && globalSupremeCard.level > 0) globalSupremeCard.getBoostValue() else 0.0)
-            
-            // b) Local production boost (target ID matches building)
-            val localProdCard = resCardList.find { it.targetBuildingId == building.id && it.boostType == "PRODUCTION" }
-            val localProdMulti = 1.0 + (if (localProdCard != null && localProdCard.level > 0) localProdCard.getBoostValue() else 0.0)
-            
-            // c) Local speed boost (speeding up turns = more output)
-            val localSpeedCard = resCardList.find { it.targetBuildingId == building.id && it.boostType == "SPEED" }
-            val localSpeedMulti = 1.0 + (if (localSpeedCard != null && localSpeedCard.level > 0) localSpeedCard.getBoostValue() else 0.0)
-
-            val scienceProdMulti = 1.0 + (state.scienceProdLevel * 0.15)
-            val researcherMultipliersCombined = globalSupremeMulti * localProdMulti * localSpeedMulti * scienceProdMulti
-
-            var totalProduction = building.getActualProductionRate() * seconds * factor * researcherMultipliersCombined
-            
-            // Check inputs if any
-            val input = building.inputResource
-            if (input != null) {
-                val inputAvail = currentResources[input] ?: 0.0
-                val totalInputNeeded = building.inputAmountPerSec * building.level * seconds
-                if (totalInputNeeded > inputAvail) {
-                    // Production is limited by available input
-                    val efficiency = if (totalInputNeeded > 0) inputAvail / totalInputNeeded else 0.0
-                    totalProduction *= efficiency
-                    // Reduce input to 0
-                    currentResources[input] = 0.0
-                } else {
-                    currentResources[input] = inputAvail - totalInputNeeded
-                }
-            }
-            
-            val prodRes = building.resourceProduced
-            tempProducedMap[building.id] = totalProduction
-            currentResources[prodRes] = (currentResources[prodRes] ?: 0.0) + totalProduction
+        val buildings = dao.getBuildingsDirect()
+        val researchers = dao.getResearchersDirect()
+        val start = dao.getResourcesDirect()
+        var resources = start
+        var cash = 0.0
+        var comrades = 0.0
+        var rate = state.comradesPerSec
+        // Bounded to 16 hours. Replaying the same one-second rule preserves input and
+        // surplus autosell semantics even when a downstream factory runs out of stock.
+        repeat(seconds.toInt()) {
+            if (it % 256 == 0) kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            val tick = ProductionEngine.step(state, buildings, resources, researchers)
+            resources = tick.resources
+            cash += tick.cash
+            comrades += tick.comrades
+            rate = tick.comrades
         }
-
-        // 2. Process Auto-Sells and actual increases of SURPLUS
-        val basePrices = mapOf(
-            "Energy Cell" to 1.0,
-            "Iron Ore" to 5.0,
-            "Hyperalloy" to 15.0,
-            "Quantum Chip" to 100.0,
-            "Organic Feedstock" to 400.0,
-            "Neural Implant" to 2000.0,
-            "Antimatter Containment" to 12000.0,
-            "Warp Drive" to 80000.0
-        )
-        for (building in buildingsList) {
-            if (building.level == 0 || !building.isAutomated) continue
-            val actualProduced = tempProducedMap[building.id] ?: 0.0
-            if (actualProduced <= 0.0) continue
-
-            val prodRes = building.resourceProduced
-            val isHighLevelResource = prodRes != "Energy Cell" && prodRes != "Iron Ore"
-            if (building.isAutoSelling && state.hasAutoSellLicense && isHighLevelResource) {
-                val startQty = startResources[prodRes] ?: 0.0
-                val currentQty = currentResources[prodRes] ?: 0.0
-                val netSurplus = (currentQty - startQty).coerceAtLeast(0.0)
-                
-                val sellAmount = minOf(actualProduced, netSurplus)
-                if (sellAmount > 0.0) {
-                    val scienceCreditsMulti = 1.0 + (state.scienceCreditsLevel * 0.10)
-                    val basePrice = (basePrices[prodRes] ?: 1.0) * scienceCreditsMulti
-                    creditEarned += sellAmount * basePrice
-                    currentResources[prodRes] = currentQty - sellAmount
-                }
-                
-                // If any portion of the production was kept (e.g., due to rounding or limited sell), track it
-                val netIncrease = (currentResources[prodRes] ?: 0.0) - startQty
-                if (netIncrease > 0.1) {
-                    earnings[prodRes] = (earnings[prodRes] ?: 0.0) + netIncrease
-                }
-            } else {
-                earnings[prodRes] = (earnings[prodRes] ?: 0.0) + actualProduced
-            }
-        }
-
-        // Save resources and updated state
-        val updatedResources = currentResources.map { ResourceInventory(it.key, it.value) }
-        dao.saveResources(updatedResources)
-        dao.saveGameState(state.copy(
-            cash = state.cash + creditEarned,
-            comrades = state.comrades + seconds * comradeRate,
-            comradesPerSec = comradeRate,
-            lastSavedTime = curTime
-        ))
-
-        // Report the stock remaining after downstream consumption, not gross production.
-        val netEarnings = currentResources.mapValues { (name, quantity) ->
-            (quantity - (startResources[name] ?: 0.0)).coerceAtLeast(0.0)
-        }.filterValues { it > 0.0 }
-        return@withTransaction OfflineEarnings(seconds, netEarnings, creditEarned)
+        require((state.cash + cash).isFinite() && (state.comrades + comrades).isFinite())
+        dao.saveResources(resources)
+        saveValidatedState(state.copy(cash = state.cash + cash, comrades = state.comrades + comrades,
+            comradesPerSec = rate, lastSavedTime = curTime))
+        val initial = start.associate { it.name to it.quantity }
+        val net = resources.associate { it.name to (it.quantity - initial.getValue(it.name)).coerceAtLeast(0.0) }
+            .filterValues { it > 0 }
+        OfflineEarnings(seconds, net, cash)
     }
 
-    // Generic callers may hold a stale UI snapshot. Core progression is owned by
-    // the dedicated transactions, and must never be overwritten by those callers.
+    // Full writes are only for fresh snapshots read inside a progress/production transaction.
+    // UI operations use ProgressActions; core progression remains owned by its dedicated transactions.
     suspend fun saveGameState(state: GameState) = db.withTransaction {
         val current = dao.getGameStateDirect()
-        dao.saveGameState(if (current == null) state else state.copy(
+        saveValidatedState(if (current == null) state else state.copy(
             nebulaCores = current.nebulaCores, availableCores = current.availableCores,
             industrialEngineeringLevel = current.industrialEngineeringLevel,
             tacticalLogisticsLevel = current.tacticalLogisticsLevel,
@@ -345,7 +264,7 @@ class GameRepository(private val db: GameDatabase) {
         val cost = upgrade.costs.getOrNull(level) ?: return@withTransaction false
         if (state.availableCores < cost) return@withTransaction false
         val paid = state.copy(availableCores = state.availableCores - cost)
-        dao.saveGameState(when (upgrade) {
+        saveValidatedState(when (upgrade) {
             StellarUpgrade.INDUSTRIAL -> paid.copy(industrialEngineeringLevel = level + 1)
             StellarUpgrade.TACTICAL -> paid.copy(tacticalLogisticsLevel = level + 1)
             StellarUpgrade.OFFLINE -> paid.copy(offlineReserveLevel = level + 1)
@@ -358,7 +277,7 @@ class GameRepository(private val db: GameDatabase) {
         val state = dao.getGameStateDirect() ?: return@withTransaction false
         val claimed = state.claimedCoreEvents.split("|").filter { it.isNotEmpty() }
         if (taskId in claimed) return@withTransaction false
-        dao.saveGameState(StellarLab.grant(state, 2).copy(
+        saveValidatedState(StellarLab.grant(state, 2).copy(
             starGems = state.starGems + 50, claimedCoreEvents = (claimed + taskId).joinToString("|")
         ))
         true
@@ -417,7 +336,7 @@ class GameRepository(private val db: GameDatabase) {
         if (levelsGained <= 0) return@withTransaction false
 
         if (state.cash >= totalCost) {
-            dao.saveGameState(state.copy(
+            saveValidatedState(state.copy(
                 cash = state.cash - totalCost
             ))
             dao.updateBuilding(b.copy(level = b.level + levelsGained))
@@ -432,7 +351,7 @@ class GameRepository(private val db: GameDatabase) {
         val b = buildingsList.find { it.id == buildingId } ?: return@withTransaction false
 
         if (gemCost > 0 && b.level > 0 && state.starGems >= gemCost && !b.isAutomated) {
-            dao.saveGameState(state.copy(starGems = state.starGems - gemCost))
+            saveValidatedState(state.copy(starGems = state.starGems - gemCost))
             dao.updateBuilding(b.copy(isAutomated = true))
             return@withTransaction true
         }
@@ -440,6 +359,8 @@ class GameRepository(private val db: GameDatabase) {
     }
 
     suspend fun toggleAutoSelling(buildingId: Int, autoSell: Boolean): Boolean = db.withTransaction {
+        val state = dao.getGameStateDirect() ?: return@withTransaction false
+        if (autoSell && !state.hasAutoSellLicense) return@withTransaction false
         val buildingsList = dao.getBuildingsDirect()
         val b = buildingsList.find { it.id == buildingId } ?: return@withTransaction false
         val isHighLevelResource = b.resourceProduced != "Energy Cell" && b.resourceProduced != "Iron Ore"
@@ -468,7 +389,7 @@ class GameRepository(private val db: GameDatabase) {
         val state = dao.getGameStateDirect() ?: return@withTransaction null
         dao.finishBattle(id, if (victory) "won" else "lost")
         if (!victory) return@withTransaction null
-        dao.saveGameState(state.copy(
+        saveValidatedState(state.copy(
             cash = state.cash + battle.credits,
             starGems = Math.addExact(state.starGems, battle.diamonds),
             guildTokens = Math.addExact(state.guildTokens, battle.guildTokens),
@@ -488,7 +409,7 @@ class GameRepository(private val db: GameDatabase) {
         
         val cost = EconomyCosts.combat(u, state)
         if (state.cash >= cost) {
-            dao.saveGameState(state.copy(cash = state.cash - cost))
+            saveValidatedState(state.copy(cash = state.cash - cost))
             dao.updateCombatUnit(u.copy(
                 level = u.level + 1,
                 health = (u.health * 1.15).toInt(),
@@ -507,18 +428,20 @@ class GameRepository(private val db: GameDatabase) {
         val res = resourcesList.find { it.name == resource } ?: return@withTransaction false
 
         if (res.quantity >= amount) {
-            val earned = amount * pricePerUnit
+            val earned = amount * pricePerUnit * (1.0 + state.scienceCreditsLevel * 0.10)
             dao.saveResource(res.copy(quantity = res.quantity - amount))
-            dao.saveGameState(state.copy(cash = state.cash + earned))
+            saveValidatedState(state.copy(cash = state.cash + earned))
             return@withTransaction true
         }
         return@withTransaction false
     }
 
     suspend fun addSuppliesAndCash(gemCost: Long, addedResources: Map<String, Double>, addedCash: Double): Boolean = db.withTransaction {
+        if (gemCost <= 0 || !addedCash.isFinite() || addedCash < 0 ||
+            addedResources.any { it.key !in ProductionEngine.basePrices || !it.value.isFinite() || it.value < 0 }) return@withTransaction false
         val state = dao.getGameStateDirect() ?: return@withTransaction false
         if (state.starGems >= gemCost) {
-            dao.saveGameState(state.copy(
+            saveValidatedState(state.copy(
                 starGems = state.starGems - gemCost,
                 cash = state.cash + addedCash
             ))
@@ -527,6 +450,7 @@ class GameRepository(private val db: GameDatabase) {
                 val add = addedResources[r.name] ?: 0.0
                 r.copy(quantity = r.quantity + add)
             }
+            require(updated.all { it.quantity.isFinite() && it.quantity >= 0 })
             dao.saveResources(updated)
             return@withTransaction true
         }
@@ -537,7 +461,7 @@ class GameRepository(private val db: GameDatabase) {
         if (!costCoins.isFinite() || costCoins <= 0.0 || rewardGems <= 0) return@withTransaction false
         val current = dao.getGameStateDirect() ?: return@withTransaction false
         if (current.cash < costCoins || current.starGems > Long.MAX_VALUE - rewardGems) return@withTransaction false
-        dao.saveGameState(current.copy(
+        saveValidatedState(current.copy(
             cash = current.cash - costCoins,
             starGems = current.starGems + rewardGems
         ))
@@ -582,10 +506,11 @@ class GameRepository(private val db: GameDatabase) {
                 r.copy(quantity = r.quantity + amountGained)
             }
             
-            dao.saveGameState(state.copy(
+            saveValidatedState(state.copy(
                 starGems = state.starGems - gemCost,
                 cash = state.cash + totalCashGained
             ))
+            require(updated.all { it.quantity.isFinite() && it.quantity >= 0 })
             dao.saveResources(updated)
             return@withTransaction true
         }
@@ -603,7 +528,7 @@ class GameRepository(private val db: GameDatabase) {
         if (state.cash < minCashRequired) return@withTransaction false
         
         val earnedCores = kotlin.math.floor(kotlin.math.sqrt(state.cash / minCashRequired)).toLong()
-        dao.saveGameState(StellarLab.grant(state, earnedCores).copy(cash = 5000.0))
+        saveValidatedState(StellarLab.grant(state, earnedCores).copy(cash = 5000.0))
         
         dao.saveResources(listOf(
             ResourceInventory("Energy Cell", 100.0),
@@ -727,11 +652,18 @@ class GameRepository(private val db: GameDatabase) {
     }
 
     // Reads and writes of a production tick must not straddle a restore transaction.
+    suspend fun <T> runProgressTransaction(block: suspend () -> T): T = db.withTransaction {
+        val result = block()
+        BackupValidation.snapshot(requireNotNull(dao.getGameStateDirect()), dao.getResourcesDirect(),
+            dao.getBuildingsDirect(), dao.getCombatUnitsDirect(), dao.getResearchersDirect(), dao.getActiveMissionsDirect())
+        result
+    }
+
     suspend fun <T> runProductionTransaction(block: suspend () -> T): T = db.withTransaction { block() }
 
     suspend fun updateProfile(avatarId: Int, skinId: Int, name: String) = db.withTransaction {
         val current = dao.getGameStateDirect() ?: return@withTransaction
-        dao.saveGameState(current.copy(
+        saveValidatedState(current.copy(
             selectedAvatarId = avatarId, selectedSkinId = skinId,
             companyName = name.takeIf { it.isNotBlank() } ?: current.companyName
         ))
@@ -751,7 +683,7 @@ class GameRepository(private val db: GameDatabase) {
         BackupSnapshot(
             requireNotNull(dao.getGameStateDirect()) { "Jogo ainda não inicializado." },
             dao.getResourcesDirect(), dao.getBuildingsDirect(), dao.getCombatUnitsDirect(),
-            dao.getResearchersDirect(), dao.getActiveMissionsDirect()
+            dao.getResearchersDirect(), dao.getActiveMissionsDirect(), dao.getAdReceipts()
         )
     }
 
@@ -761,23 +693,20 @@ class GameRepository(private val db: GameDatabase) {
         buildings: List<BusinessBuilding>,
         combatUnits: List<CombatUnit>,
         researchers: List<ResearcherCard>,
-        missions: List<ActiveMission>
+        missions: List<ActiveMission>,
+        adReceipts: List<AdRewardReceipt> = emptyList()
     ) = db.withTransaction {
-        StellarLab.validate(state)
-        require(state.id == 1 && state.cash.isFinite() && state.cash >= 0) { "Saldo inválido no backup." }
-        require(buildings.map { it.id }.sorted() == (1..8).toList()) { "Indústrias incompletas no backup." }
-        require(researchers.map { it.id }.sorted() == (1..6).toList()) { "Cientistas incompletos no backup." }
-        require(combatUnits.map { it.id }.sorted() == (1..4).toList()) { "Unidades incompletas no backup." }
-        require(resources.size == 8 && resources.map { it.name }.toSet().size == 8 &&
-            resources.all { it.quantity.isFinite() && it.quantity >= 0 }) { "Recursos inválidos no backup." }
-        require(missions.isNotEmpty() && missions.map { it.id }.toSet().size == missions.size) { "Missões inválidas no backup." }
+        BackupValidation.snapshot(state, resources, buildings, combatUnits, researchers, missions)
+        require(adReceipts.all { it.token.isNotBlank() && it.rewardedAt >= 0 })
+        require(adReceipts.map { it.token }.distinct().size == adReceipts.size)
+        adReceipts.forEach { dao.insertAdReward(it) } // Union: never forget an already-paid local callback.
         dao.abandonBattles()
         dao.clearResources()
         dao.clearBuildings()
         dao.clearCombatUnits()
         dao.clearResearchers()
         dao.clearMissions()
-        dao.saveGameState(state)
+        saveValidatedState(state)
         dao.saveResources(resources)
         dao.saveBuildings(buildings)
         dao.saveCombatUnits(combatUnits)

@@ -150,6 +150,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     // Last combat replay info
 
     init {
+        cloudSaveManager.beforeRestore = {
+            closeBattle()
+            _offlineEarnings.value = null
+            _seasonalChampionship.update { event -> event.copy(tasks = event.tasks.map {
+                it.copy(progress = 0.0, isClaimed = false)
+            }.toMutableList()) }
+            _guildMissions.update { list -> list.map { it.copy(progress = 0.0) } }
+        }
         viewModelScope.launch {
             try {
                 // Setup DB and local data seeding
@@ -206,98 +214,20 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 delay(1000)
                 repository.runProductionTransaction {
                 val activeState = repository.getGameStateDirect() ?: return@runProductionTransaction
+                val tickTime = System.currentTimeMillis()
+                if (tickTime <= activeState.lastSavedTime || tickTime - activeState.lastSavedTime < 1000) return@runProductionTransaction
                 val bList = repository.getBuildingsDirect()
                 if (bList.isEmpty()) return@runProductionTransaction
 
-                // Fetch scientists / researchers list 
-                val resCardList = repository.getResearchersDirect()
-                
-                // Calculate Comrade passive generation multiplier (ID 5)
-                val comradeGenCard = resCardList.find { it.id == 5 }
-                val comradeScalar = 1.0 + (if (comradeGenCard != null && comradeGenCard.level > 0) comradeGenCard.getBoostValue() else 0.0)
-                val scienceComradeMulti = 1.0 + (activeState.scienceComradeLevel * 0.20)
-                val comradeRate = comradeScalar * 1.0 * scienceComradeMulti
-                val newComrades = activeState.comrades + comradeRate
-
-                // Fetch inventory map
-                val resList = repository.getResourcesDirect()
-                val startResMap = resList.associate { it.name to it.quantity }
-                val resMap = startResMap.toMutableMap()
-                var creditsGainedThisTick = 0.0
-
-                // 1. Calculate production and update inventories
-                val actualProducedMap = mutableMapOf<String, Double>()
+                val tick = ProductionEngine.step(activeState, bList, repository.getResourcesDirect(),
+                    repository.getResearchersDirect(), marketPrices.value)
+                val resMap = tick.resources.associate { it.name to it.quantity }
+                val creditsGainedThisTick = tick.cash
+                val comradeRate = tick.comrades
                 for (building in bList) {
-                    if (building.level == 0) continue
-                    if (!building.isAutomated) continue
-
-                    // Prestige system bonus
-                    val prestigeBonus = 1.0 + (activeState.nebulaCores * 0.10)
-                    // Sub VIP bonus
-                    val energyFactor = (if (activeState.isSubscribed) 1.5 else 1.0) * prestigeBonus
-                    
-                    // --- Scientist/Researcher multipliers ---
-                    // a) Global supreme boost (ID 6)
-                    val globalSupremeCard = resCardList.find { it.id == 6 }
-                    val globalSupremeMulti = 1.0 + (if (globalSupremeCard != null && globalSupremeCard.level > 0) globalSupremeCard.getBoostValue() else 0.0)
-                    
-                    // b) Local production boost (target ID matches building)
-                    val localProdCard = resCardList.find { it.targetBuildingId == building.id && it.boostType == "PRODUCTION" }
-                    val localProdMulti = 1.0 + (if (localProdCard != null && localProdCard.level > 0) localProdCard.getBoostValue() else 0.0)
-                    
-                    // c) Local speed boost (speeding up turns = more output)
-                    val localSpeedCard = resCardList.find { it.targetBuildingId == building.id && it.boostType == "SPEED" }
-                    val localSpeedMulti = 1.0 + (if (localSpeedCard != null && localSpeedCard.level > 0) localSpeedCard.getBoostValue() else 0.0)
-
-                    val scienceProdMulti = 1.0 + (activeState.scienceProdLevel * 0.15)
-                    val researcherMultipliersCombined = globalSupremeMulti * localProdMulti * localSpeedMulti * scienceProdMulti
-
-                    val baseProduced = building.getActualProductionRate() * energyFactor * researcherMultipliersCombined
-                    
-                    // Deduct input if any
-                    val inputName = building.inputResource
-                    var scale = 1.0
-                    if (inputName != null) {
-                        val inputNeeded = building.inputAmountPerSec * building.level
-                        val inputAvailable = resMap[inputName] ?: 0.0
-                        if (inputAvailable >= inputNeeded) {
-                            resMap[inputName] = inputAvailable - inputNeeded
-                            scale = 1.0
-                        } else {
-                            scale = if (inputNeeded > 0) inputAvailable / inputNeeded else 0.0
-                            resMap[inputName] = 0.0
-                        }
-                    }
-
-                    val actualProduced = baseProduced * scale
-                    actualProducedMap[building.id.toString()] = actualProduced
-                    
-                    resMap[building.resourceProduced] = (resMap[building.resourceProduced] ?: 0.0) + actualProduced
-                    
-                    incrementSeasonalProgress(building.resourceProduced, actualProduced)
-                    incrementGuildProgress(building.resourceProduced, actualProduced)
-                }
-
-                // 2. Process autosells of SURPLUS
-                for (building in bList) {
-                    if (building.level == 0 || !building.isAutomated) continue
-                    val actualProduced = actualProducedMap[building.id.toString()] ?: 0.0
-                    if (actualProduced <= 0.0) continue
-
-                    val isHighLevelResource = building.resourceProduced != "Energy Cell" && building.resourceProduced != "Iron Ore"
-                    if (building.isAutoSelling && activeState.hasAutoSellLicense && isHighLevelResource) {
-                        val startQty = startResMap[building.resourceProduced] ?: 0.0
-                        val currentQty = resMap[building.resourceProduced] ?: 0.0
-                        val netSurplus = (currentQty - startQty).coerceAtLeast(0.0)
-                        
-                        val sellAmount = minOf(actualProduced, netSurplus)
-                        if (sellAmount > 0.0) {
-                            val price = marketPrices.value[building.resourceProduced] ?: 1.0
-                            val scienceCreditsMulti = 1.0 + (activeState.scienceCreditsLevel * 0.10)
-                            creditsGainedThisTick += sellAmount * price * scienceCreditsMulti
-                            resMap[building.resourceProduced] = currentQty - sellAmount
-                        }
-                    }
+                    val produced = tick.produced[building.id.toString()] ?: 0.0
+                    incrementSeasonalProgress(building.resourceProduced, produced)
+                    incrementGuildProgress(building.resourceProduced, produced)
                 }
 
                 // Save updated resource quantities back to repository
@@ -312,7 +242,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     cash = nextCash,
                     comrades = nextComrades,
                     comradesPerSec = comradeRate,
-                    lastSavedTime = System.currentTimeMillis()
+                    lastSavedTime = tickTime
                 ))
 
                 // 3. Process Active Missions
@@ -528,31 +458,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun buyAutoSellLicense() {
-        val current = gameState.value ?: return
-        viewModelScope.launch {
-            repository.saveGameState(current.copy(
-                hasAutoSellLicense = true
-            ))
-        }
+        viewModelScope.launch { repository.buyAutoSellLicense() }
     }
 
     fun buyAutoSellLicenseWithGems(onSuccess: () -> Unit, onError: (String) -> Unit) {
-        val current = gameState.value ?: return
-        if (current.hasAutoSellLicense) {
-            onError("Você já possui esta licença!")
-            return
-        }
-        if (current.starGems < 300) {
-            onError("Gemas Estelares insuficientes (necessário: 300 💎)!")
-            return
-        }
-        viewModelScope.launch {
-            repository.saveGameState(current.copy(
-                starGems = current.starGems - 300,
-                hasAutoSellLicense = true
-            ))
-            onSuccess()
-        }
+        viewModelScope.launch { repository.buyAutoSellLicenseWithGems(onSuccess, onError) }
     }
 
     fun purchaseSupplyCrateWithGems(onSuccess: () -> Unit, onError: (String) -> Unit) {
@@ -630,37 +540,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             val resList = repository.getResourcesDirect()
             val resMap = resList.associate { it.name to it.quantity }.toMutableMap()
 
-            val prestigeBonus = 1.0 + (activeState.nebulaCores * 0.10)
-            val energyFactor = (if (activeState.isSubscribed) 1.5 else 1.0) * prestigeBonus
-            val baseProduced = building.getActualProductionRate() * energyFactor
-            
-            // Deduct input if any
-            val inputName = building.inputResource
-            var scale = 1.0
-            if (inputName != null) {
-                val inputNeeded = building.inputAmountPerSec * building.level
-                val inputAvailable = resMap[inputName] ?: 0.0
-                if (inputAvailable >= inputNeeded) {
-                    resMap[inputName] = inputAvailable - inputNeeded
-                    scale = 1.0
-                } else {
-                    scale = if (inputNeeded > 0) inputAvailable / inputNeeded else 0.0
-                    resMap[inputName] = 0.0
-                }
-            }
-
-            val actualProduced = baseProduced * scale
-            var cashGained = 0.0
-            if (building.isAutoSelling && activeState.hasAutoSellLicense) {
-                val price = marketPrices.value[building.resourceProduced] ?: 1.0
-                cashGained = actualProduced * price
-                incrementSeasonalProgress(building.resourceProduced, actualProduced)
-                incrementGuildProgress(building.resourceProduced, actualProduced)
-            } else {
-                resMap[building.resourceProduced] = (resMap[building.resourceProduced] ?: 0.0) + actualProduced
-                incrementSeasonalProgress(building.resourceProduced, actualProduced)
-                incrementGuildProgress(building.resourceProduced, actualProduced)
-            }
+            val tick = ProductionEngine.step(activeState, listOf(building.copy(isAutomated = true)),
+                resList, repository.getResearchersDirect(), marketPrices.value)
+            resMap.clear()
+            resMap.putAll(tick.resources.associate { it.name to it.quantity })
+            val actualProduced = tick.produced[building.id.toString()] ?: 0.0
+            val cashGained = tick.cash
+            incrementSeasonalProgress(building.resourceProduced, actualProduced)
+            incrementGuildProgress(building.resourceProduced, actualProduced)
 
             // Save updated resource quantities back to repository
             val updated = resMap.map { ResourceInventory(it.key, it.value) }
@@ -684,9 +571,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun sellResourceToMarket(name: String, amount: Double) {
         val price = marketPrices.value[name] ?: 1.0
         val current = gameState.value
-        val scienceCreditsMulti = 1.0 + (current?.scienceCreditsLevel ?: 0) * 0.10
+
         viewModelScope.launch {
-            repository.sellResource(name, amount, price * scienceCreditsMulti)
+            repository.sellResource(name, amount, price)
         }
     }
 
@@ -699,13 +586,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     // Subscription & monetization interactions
     fun buySubscription() {
-        val current = gameState.value ?: return
-        viewModelScope.launch {
-            repository.saveGameState(current.copy(
-                isSubscribed = true,
-                starGems = current.starGems + 1000 // VIP starter gift!
-            ))
-        }
+        viewModelScope.launch { repository.buySubscription() }
     }
 
     fun buyPremiumPack(costCoins: Double, rewardGems: Long, packName: String) {
@@ -728,24 +609,15 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     // Join guild simulator
     fun joinGuild(guildName: String) {
-        val current = gameState.value ?: return
-        viewModelScope.launch {
-            repository.saveGameState(current.copy(guildName = guildName))
-        }
+        viewModelScope.launch { repository.joinGuild(guildName) }
     }
 
     fun completeTutorial() {
-        val current = gameState.value ?: return
-        viewModelScope.launch {
-            repository.saveGameState(current.copy(hasCompletedTutorial = true))
-        }
+        viewModelScope.launch { repository.completeTutorial() }
     }
 
     fun resetTutorial() {
-        val current = gameState.value ?: return
-        viewModelScope.launch {
-            repository.saveGameState(current.copy(hasCompletedTutorial = false))
-        }
+        viewModelScope.launch { repository.resetTutorial() }
     }
 
     fun logoutFromCloud() {
@@ -760,278 +632,37 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun downloadFromCloud(onSuccess: () -> Unit, onError: (String) -> Unit) {
         viewModelScope.launch {
-            cloudSaveManager.downloadBackup(repository, onSuccess, onError)
+            closeBattle()
+            cloudSaveManager.downloadBackup(repository, {
+                _offlineEarnings.value = null
+                onSuccess()
+            }, onError)
         }
     }
 
     // --- ADVENTURE COMMUNIST MECHANICS ---
 
     fun buyAndOpenCapsuleWithGems(type: String, onSuccess: (Long, List<String>) -> Unit, onError: (String) -> Unit) {
-        val current = gameState.value ?: return
-        val cost = when (type) {
-            "COMUM" -> 50
-            "EPICA" -> 150
-            "SUPREMA" -> 400
-            else -> 0
-        }
-        if (current.starGems < cost) {
-            onError("Gemas insuficientes para abrir Cápsula ${type}!")
-            return
-        }
-        
-        viewModelScope.launch {
-            val scientists = repository.getResearchersDirect()
-            val scienceGain = when (type) {
-                "COMUM" -> Random.nextLong(15, 40)
-                "EPICA" -> Random.nextLong(50, 110)
-                "SUPREMA" -> Random.nextLong(150, 350)
-                else -> 10L
-            }
-            
-            val cardsNumber = when (type) {
-                "COMUM" -> 3
-                "EPICA" -> 6
-                "SUPREMA" -> 12
-                else -> 1
-            }
-            
-            val obtainedCards = mutableListOf<String>()
-            val updatedScientists = scientists.map { s ->
-                var gained = 0
-                for (i in 0 until cardsNumber) {
-                    val roll = Random.nextDouble()
-                    val matchChance = when (s.rarity) {
-                        "COMMON" -> 0.40
-                        "RARE" -> 0.20
-                        "EPIC" -> 0.10
-                        "SUPREME" -> if (type == "SUPREMA") 0.15 else 0.03
-                        else -> 0.15
-                    }
-                    if (roll < matchChance) gained++
-                }
-                
-                if (gained > 0) {
-                    obtainedCards.add("${s.name} (x$gained)")
-                    s.copy(cardsCollected = s.cardsCollected + gained)
-                } else s
-            }
-            
-            repository.saveResearchers(updatedScientists)
-            repository.saveGameState(current.copy(
-                starGems = current.starGems - cost,
-                science = current.science + scienceGain
-            ))
-            
-            onSuccess(scienceGain, obtainedCards)
-        }
+        viewModelScope.launch { repository.buyAndOpenCapsuleWithGems(type, onSuccess, onError) }
     }
 
     fun upgradeResearcherCard(id: Int, onSuccess: () -> Unit, onError: (String) -> Unit) {
-        val current = gameState.value ?: return
-        viewModelScope.launch {
-            val scientists = repository.getResearchersDirect()
-            val researcher = scientists.find { it.id == id } ?: return@launch
-            
-            val cost = researcher.getUpgradeScienceCost()
-            if (current.science < cost) {
-                onError("Ciência insuficiente! Requer: ${cost} 🧪")
-                return@launch
-            }
-            if (researcher.cardsCollected < researcher.cardsNeededToUpgrade) {
-                onError("Cartas insuficientes! Requer: ${researcher.cardsCollected}/${researcher.cardsNeededToUpgrade} 📇")
-                return@launch
-            }
-            
-            val nextLevel = researcher.level + 1
-            val cardsUsed = researcher.cardsNeededToUpgrade
-            val nextCardsNeeded = researcher.cardsNeededToUpgrade + (4 * nextLevel)
-            
-            val updated = researcher.copy(
-                level = nextLevel,
-                cardsCollected = researcher.cardsCollected - cardsUsed,
-                cardsNeededToUpgrade = nextCardsNeeded
-            )
-            
-            repository.updateResearcher(updated)
-            repository.saveGameState(current.copy(
-                science = current.science - cost
-            ))
-            onSuccess()
-        }
+        viewModelScope.launch { repository.upgradeResearcherCard(id, onSuccess, onError) }
     }
 
     fun claimMissionReward(missionId: Int, onSuccess: (Long, Long, String, List<String>) -> Unit) {
-        viewModelScope.launch {
-            val freshState = repository.getGameStateDirect() ?: return@launch
-            val m = repository.getActiveMissionsDirect().find { it.id == missionId } ?: return@launch
-            if (!m.isCompleted || m.isClaimed) return@launch
-            
-            // Mark as claimed
-            repository.updateActiveMission(m.copy(isClaimed = true))
-            
-            val scienceReward = m.rewardScience
-            val gemsReward = m.rewardGems
-            
-            val scientists = repository.getResearchersDirect()
-            val cardsNumber = when (m.rewardCapsuleType) {
-                "COMUM" -> 2
-                "EPICA" -> 5
-                "SUPREMA" -> 10
-                else -> 1
-            }
-            
-            val obtainedCards = mutableListOf<String>()
-            val updatedScientists = scientists.map { s ->
-                var gained = 0
-                for (i in 0 until cardsNumber) {
-                    val roll = Random.nextDouble()
-                    val matchChance = when (s.rarity) {
-                        "COMMON" -> 0.45
-                        "RARE" -> 0.22
-                        "EPIC" -> 0.12
-                        "SUPREME" -> 0.05
-                        else -> 0.15
-                    }
-                    if (roll < matchChance) gained++
-                }
-                
-                if (gained > 0) {
-                    obtainedCards.add("${s.name} (x$gained)")
-                    s.copy(cardsCollected = s.cardsCollected + gained)
-                } else s
-            }
-            
-            repository.saveResearchers(updatedScientists)
-            
-            val nextCompleted = freshState.completedRankMissions + 1
-            repository.saveGameState(freshState.copy(
-                starGems = freshState.starGems + gemsReward,
-                science = freshState.science + scienceReward,
-                completedRankMissions = nextCompleted
-            ))
-            
-            onSuccess(gemsReward, scienceReward, m.rewardCapsuleType, obtainedCards)
-        }
+        viewModelScope.launch { repository.claimMissionReward(missionId, onSuccess) }
     }
 
     fun rankUpPlayer(onSuccess: (Int, Long, List<String>) -> Unit) {
-        viewModelScope.launch {
-            val freshState = repository.getGameStateDirect() ?: return@launch
-            val nextRank = freshState.playerRank + 1
-            val newMissions = listOf(
-                ActiveMission(
-                    id = 1,
-                    description = "Possuir ${3 + nextRank * 2} Sol-Power Arrays",
-                    progress = 0.0,
-                    target = (3 + nextRank * 2).toDouble(),
-                    isCompleted = false,
-                    isClaimed = false,
-                    missionType = "OWN_BUILDING",
-                    targetId = 1,
-                    rewardGems = (10 + nextRank * 5).toLong(),
-                    rewardScience = (40 + nextRank * 20).toLong(),
-                    rewardCapsuleType = if (nextRank % 3 == 0) "SUPREMA" else "EPICA"
-                ),
-                ActiveMission(
-                    id = 2,
-                    description = "Coletar ${formatCredits(500.0 * 2.5.pow(nextRank - 1))} de ${getBuildingResourceNameByRank(nextRank)}",
-                    progress = 0.0,
-                    target = 500.0 * 2.5.pow(nextRank - 1),
-                    isCompleted = false,
-                    isClaimed = false,
-                    missionType = "COLLECT_RESOURCE",
-                    targetString = getBuildingResourceNameByRank(nextRank),
-                    rewardGems = (15 + nextRank * 5).toLong(),
-                    rewardScience = (50 + nextRank * 20).toLong(),
-                    rewardCapsuleType = "EPICA"
-                ),
-                ActiveMission(
-                    id = 3,
-                    description = "Acumular ${formatCredits(8000.0 * 4.0.pow(nextRank - 1))} de Créditos (C$)",
-                    progress = 0.0,
-                    target = 8000.0 * 4.0.pow(nextRank - 1),
-                    isCompleted = false,
-                    isClaimed = false,
-                    missionType = "EARN_CASH",
-                    rewardGems = (20 + nextRank * 5).toLong(),
-                    rewardScience = (60 + nextRank * 20).toLong(),
-                    rewardCapsuleType = "SUPREMA"
-                )
-            )
-            repository.saveActiveMissions(newMissions)
-            
-            val scientists = repository.getResearchersDirect()
-            val rewardScienceGain = (100 * nextRank).toLong()
-            val rewardGemsGain = (50 + nextRank * 10).toLong()
-            
-            val obtainedCards = mutableListOf<String>()
-            val updatedScientists = scientists.map { s ->
-                val gained = Random.nextInt(1, 3)
-                obtainedCards.add("${s.name} (x$gained)")
-                s.copy(cardsCollected = s.cardsCollected + gained)
-            }
-            repository.saveResearchers(updatedScientists)
-            
-            repository.saveGameState(freshState.copy(
-                playerRank = nextRank,
-                completedRankMissions = 0,
-                starGems = freshState.starGems + rewardGemsGain,
-                science = freshState.science + rewardScienceGain
-            ))
-            
-            onSuccess(nextRank, rewardScienceGain, obtainedCards)
-        }
+        viewModelScope.launch { repository.rankUpPlayer(onSuccess) }
     }
 
     fun purchaseScienceUpgrade(upgradeType: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
-        viewModelScope.launch {
-            val freshState = repository.getGameStateDirect() ?: return@launch
-            val currentLevel = when (upgradeType) {
-                "PROD" -> freshState.scienceProdLevel
-                "CREDITS" -> freshState.scienceCreditsLevel
-                "COMRADE" -> freshState.scienceComradeLevel
-                "COMBAT" -> freshState.scienceCombatLevel
-                else -> 0
-            }
-            val cost = when (upgradeType) {
-                "PROD" -> (100 * 1.5.pow(currentLevel)).toLong()
-                "CREDITS" -> (150 * 1.6.pow(currentLevel)).toLong()
-                "COMRADE" -> (80 * 1.5.pow(currentLevel)).toLong()
-                "COMBAT" -> (200 * 1.7.pow(currentLevel)).toLong()
-                else -> 999999L
-            }
-            if (freshState.science < cost) {
-                onError("Ciência insuficiente! Requer: $cost 🧪")
-                return@launch
-            }
-            
-            val updatedState = when (upgradeType) {
-                "PROD" -> freshState.copy(science = freshState.science - cost, scienceProdLevel = currentLevel + 1)
-                "CREDITS" -> freshState.copy(science = freshState.science - cost, scienceCreditsLevel = currentLevel + 1)
-                "COMRADE" -> freshState.copy(science = freshState.science - cost, scienceComradeLevel = currentLevel + 1)
-                "COMBAT" -> freshState.copy(science = freshState.science - cost, scienceCombatLevel = currentLevel + 1)
-                else -> freshState
-            }
-            repository.saveGameState(updatedState)
-            onSuccess()
-        }
-    }
-    
-    private fun getBuildingResourceNameByRank(rank: Int): String {
-        return when (rank % 8) {
-            1 -> "Energy Cell"
-            2 -> "Iron Ore"
-            3 -> "Hyperalloy"
-            4 -> "Quantum Chip"
-            5 -> "Organic Feedstock"
-            6 -> "Neural Implant"
-            7 -> "Antimatter Containment"
-            0 -> "Warp Drive"
-            else -> "Energy Cell"
-        }
+        viewModelScope.launch { repository.purchaseScienceUpgrade(upgradeType, onSuccess, onError) }
     }
 
-    private fun formatCredits(amount: Double): String = compactNumber(amount)
+
 }
 
 // Sealed status class for active fights

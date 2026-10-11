@@ -174,6 +174,9 @@ interface GameDao {
     @Query("UPDATE combat_battles SET status = 'abandoned' WHERE status = 'pending'")
     suspend fun abandonBattles()
 
+    @Query("SELECT * FROM ad_reward_receipts ORDER BY token")
+    suspend fun getAdReceipts(): List<AdRewardReceipt>
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAdReward(receipt: AdRewardReceipt): Long
 

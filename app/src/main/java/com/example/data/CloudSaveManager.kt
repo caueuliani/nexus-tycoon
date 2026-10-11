@@ -35,6 +35,7 @@ class CloudSaveManager(private val context: Context) {
 
     private val _syncing = MutableStateFlow(false)
     val syncing: StateFlow<Boolean> = _syncing
+    internal var beforeRestore: () -> Unit = {}
     var lastRestoreSummary: String = ""
         private set
 
@@ -121,6 +122,7 @@ class CloudSaveManager(private val context: Context) {
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
+        if (_syncing.value) { onError("Sincronização já em andamento."); return }
         val email = _userEmail.value
         val sessionUid = auth?.currentUser?.uid
         if (email == null) {
@@ -154,6 +156,7 @@ class CloudSaveManager(private val context: Context) {
                 onSuccess()
             }
         } catch (e: Throwable) {
+            if (e is kotlinx.coroutines.CancellationException) { _syncing.value = false; throw e }
             _syncing.value = false
             addLog("Erro ao salvar: ${e.message}")
             onError(e.message ?: "Erro de conexão")
@@ -169,6 +172,7 @@ class CloudSaveManager(private val context: Context) {
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
+        if (_syncing.value) { onError("Sincronização já em andamento."); return }
         val email = _userEmail.value
         val sessionUid = auth?.currentUser?.uid
         if (email == null) {
@@ -223,6 +227,7 @@ class CloudSaveManager(private val context: Context) {
                 onSuccess()
             }
         } catch (e: Throwable) {
+            if (e is kotlinx.coroutines.CancellationException) { _syncing.value = false; throw e }
             _syncing.value = false
             addLog("Falha ao carregar: ${e.message}")
             onError(e.message ?: "Erro ao obter backup")
@@ -237,7 +242,8 @@ class CloudSaveManager(private val context: Context) {
 
             // Map data structure
             return mapOf(
-                "backupVersion" to 3,
+                "backupVersion" to 4,
+                "adReceipts" to snapshot.adReceipts.map { mapOf("token" to it.token, "rewardedAt" to it.rewardedAt) },
                 "companyName" to state.companyName,
                 "cash" to state.cash,
                 "starGems" to state.starGems,
@@ -303,8 +309,9 @@ class CloudSaveManager(private val context: Context) {
 
     @Suppress("UNCHECKED_CAST")
     suspend fun restoreFromPayload(repository: GameRepository, payload: Map<String, Any>) {
+        BackupValidation.payload(payload)
         val version = (payload["backupVersion"] as? Number)?.toInt()
-        require(version == 2 || version == 3) {
+        require(version == 2 || version == 3 || version == 4) {
             "Backup antigo ou incompatível. Gere um novo backup no dispositivo de origem; o progresso local foi preservado."
         }
         require(listOf("resources", "buildings", "combatUnits", "researchers", "missions").all {
@@ -314,7 +321,7 @@ class CloudSaveManager(private val context: Context) {
         require(scienceFields.all { payload[it] is Number && (payload[it] as Number).toInt() >= 0 }) {
             "Pesquisas ausentes ou inválidas no backup."
         }
-        if (version == 3) {
+        if (version == 3 || version == 4) {
             require(listOf("availableCores", "industrialEngineeringLevel", "tacticalLogisticsLevel", "offlineReserveLevel").all { payload[it] is Number }) { "Laboratório ausente no backup." }
             require(payload["claimedCoreEvents"] is String) { "Resgates de eventos ausentes." }
         }
@@ -412,7 +419,13 @@ class CloudSaveManager(private val context: Context) {
                 rewardScience = (it["rewardScience"] as Number).toLong(), rewardCapsuleType = it["rewardCapsuleType"] as String
             )
         }
-        repository.restoreBackup(state, resources, buildings, combatUnits, researchers, missions)
+        BackupValidation.snapshot(state, resources, buildings, combatUnits, researchers, missions)
+        val receipts = if (version == 4) (payload["adReceipts"] as List<Map<String, Any>>).map {
+            AdRewardReceipt(it["token"] as String, (it["rewardedAt"] as Number).toLong())
+        } else emptyList()
+        require(receipts.map { it.token }.distinct().size == receipts.size && receipts.all { it.token.isNotBlank() })
+        beforeRestore()
+        repository.restoreBackup(state, resources, buildings, combatUnits, researchers, missions, receipts)
         lastRestoreSummary = "Níveis das fábricas (1–8): " +
             buildings.sortedBy { it.id }.joinToString(", ") { it.level.toString() } +
             "\nEstoques com recursos: ${resources.count { it.quantity > 0 }} de ${resources.size}."

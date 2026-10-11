@@ -4674,6 +4674,7 @@ fun ProfileDialog(
     val activeState = state ?: return
 
     val userEmail by viewModel.cloudSaveManager.userEmail.collectAsStateWithLifecycle()
+    val demoBackup by viewModel.cloudSaveManager.isSandboxMode.collectAsStateWithLifecycle()
     val syncing by viewModel.cloudSaveManager.syncing.collectAsStateWithLifecycle()
 
     var textNameInput by remember(activeState.companyName) { mutableStateOf(activeState.companyName) }
@@ -4830,7 +4831,7 @@ fun ProfileDialog(
                                     Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(24.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Column {
-                                        Text("Conta Google Vinculada", fontSize = 9.sp, color = SuccessGreen, fontWeight = FontWeight.Bold)
+                                        Text(if (demoBackup) "DEMONSTRAÇÃO LOCAL: não salva no Firebase" else "Conta Google Vinculada", fontSize = 9.sp, color = SuccessGreen, fontWeight = FontWeight.Bold)
                                         Text(userEmail!!, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = TextWhite)
                                     }
                                 }
@@ -4851,7 +4852,7 @@ fun ProfileDialog(
                                 onClick = {
                                     viewModel.uploadToCloud(
                                         onSuccess = {
-                                            feedbackMessage = "Backup efetuado com sucesso na nuvem!"
+                                            feedbackMessage = if (demoBackup) "Demonstração salva apenas neste aparelho." else "Backup efetuado com sucesso no Firebase!"
                                             feedbackSuccess = true
                                         },
                                         onError = {
@@ -4897,7 +4898,7 @@ fun ProfileDialog(
                                 } else {
                                     Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Carregar Nuvem", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text(if (demoBackup) "Carregar demo" else "Carregar Nuvem", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
