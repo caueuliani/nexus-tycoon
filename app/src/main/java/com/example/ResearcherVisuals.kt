@@ -9,6 +9,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Science
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.Diamond
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -24,7 +27,19 @@ import androidx.compose.ui.unit.sp
 import com.example.data.ResearcherCard
 import com.example.ui.theme.*
 
-// Shared visual language for researcher cards and capsule reveals.
+// Shared visual language for collection, industry, combat, ascension and rewards.
+internal object NexusVisuals {
+    val credits = SolarGold
+    val gems = Color(0xFF55B8FF)
+    val cores = Color(0xFFC179FF)
+    val guild = NeonCyan
+    val success = SuccessGreen
+    val locked = TextMuted
+
+    fun frame(color: Color) = Brush.linearGradient(listOf(color, color.copy(alpha = 0.25f), color))
+    fun surface(color: Color) = Brush.verticalGradient(listOf(color.copy(alpha = 0.16f), CosmicCard))
+}
+
 internal object ResearcherStyle {
     fun color(rarity: String): Color = when (rarity.uppercase()) {
         "COMMON" -> Color(0xFF9CB4C5)
@@ -52,7 +67,59 @@ internal object ResearcherStyle {
         else -> R.drawable.img_scientist_card
     }
 
-    fun frame(color: Color) = Brush.linearGradient(listOf(color, color.copy(alpha = 0.25f), color))
+    fun frame(color: Color) = NexusVisuals.frame(color)
+}
+
+@Composable
+internal fun NexusPanel(
+    accent: Color,
+    modifier: Modifier = Modifier,
+    unlocked: Boolean = true,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val visibleAccent = if (unlocked) accent else NexusVisuals.locked
+    Card(
+        modifier = modifier.border(1.5.dp, NexusVisuals.frame(visibleAccent), RoundedCornerShape(16.dp)),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = CosmicCard)
+    ) {
+        Column(Modifier.background(NexusVisuals.surface(visibleAccent)).padding(16.dp), content = content)
+    }
+}
+
+@Composable
+internal fun NexusMetric(label: String, value: String, accent: Color, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.background(accent.copy(alpha = 0.10f), RoundedCornerShape(10.dp))
+        .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(10.dp)).padding(10.dp)) {
+        Text(label.uppercase(), color = accent, fontSize = 10.sp,
+            fontWeight = FontWeight.Black, letterSpacing = 0.7.sp)
+        Text(value, color = TextWhite, fontSize = 16.sp, fontWeight = FontWeight.Black,
+            maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+internal fun NexusRewardRow(credits: String? = null, gems: String? = null,
+    guild: String? = null, cores: String? = null) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (credits != null) NexusRewardLine("CRÉDITOS", credits, NexusVisuals.credits, Icons.Filled.AccountBalanceWallet)
+        if (gems != null) NexusRewardLine("GEMAS", gems, NexusVisuals.gems, Icons.Filled.Diamond)
+        if (guild != null) NexusRewardLine("GUILD TOKENS", guild, NexusVisuals.guild, Icons.Filled.Shield)
+        if (cores != null) NexusRewardLine("STAR CORES", cores, NexusVisuals.cores, Icons.Filled.AutoAwesome)
+    }
+}
+
+@Composable
+private fun NexusRewardLine(label: String, value: String, accent: Color,
+    icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    Row(Modifier.fillMaxWidth().background(accent.copy(alpha = 0.10f), RoundedCornerShape(8.dp))
+        .padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = accent, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(label, color = accent, fontSize = 10.sp, fontWeight = FontWeight.Black,
+            modifier = Modifier.weight(1f))
+        Text(value, color = TextWhite, fontSize = 14.sp, fontWeight = FontWeight.Black)
+    }
 }
 
 @Composable

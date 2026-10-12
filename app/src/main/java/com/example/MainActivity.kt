@@ -887,7 +887,9 @@ fun MissionsDialog(
             onDismissRequest = { showCapsuleAlert = false },
             title = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    Text("🎁 CÁPSULA ABERTA! 🎁", fontWeight = FontWeight.Black, color = SolarGold, fontSize = 22.sp)
+                    Icon(Icons.Filled.MilitaryTech, contentDescription = null, tint = SolarGold,
+                        modifier = Modifier.size(36.dp))
+                    Text("CONQUISTA DE PATENTE", fontWeight = FontWeight.Black, color = SolarGold, fontSize = 20.sp)
                     Text("Tipo: Cápsula $rewardCapType", style = MaterialTheme.typography.bodySmall, color = TextMuted)
                 }
             },
@@ -898,14 +900,8 @@ fun MissionsDialog(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text("Você coletou suprimentos incríveis!", fontWeight = FontWeight.Bold, color = TextWhite)
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("🧪 +${rewardScience ?: 0}", fontWeight = FontWeight.Black, color = SolarGold, fontSize = 16.sp)
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("💎 +${rewardGems ?: 0}", fontWeight = FontWeight.Black, color = Color(0xFF03A9F4), fontSize = 16.sp)
-                        }
-                    }
+                    ScienceReward(rewardScience ?: 0)
+                    NexusRewardRow(gems = "+${rewardGems ?: 0}")
                     Divider(color = MaterialTheme.colorScheme.outlineVariant)
                     Text("CARTAS CIENTÍFICAS OBTIDAS:", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     ResearcherRewardCards(rewardCards, researchers)
@@ -933,6 +929,7 @@ fun ResearchersLabDialog(
     var shopCardsObtained by remember { mutableStateOf<List<String>>(emptyList()) }
     var shopCapType by remember { mutableStateOf("") }
     var showShopAlert by remember { mutableStateOf(false) }
+    var evolvedResearcherId by remember { mutableStateOf<Int?>(null) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
 
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
@@ -1223,7 +1220,9 @@ fun ResearchersLabDialog(
                             r = r,
                             currentScience = state.science,
                             onUpgrade = {
-                                viewModel.upgradeResearcherCard(r.id, onSuccess = {}, onError = { err -> errorMsg = err })
+                                viewModel.upgradeResearcherCard(r.id,
+                                    onSuccess = { evolvedResearcherId = r.id },
+                                    onError = { err -> errorMsg = err })
                             }
                         )
                     }
@@ -1348,6 +1347,31 @@ fun ResearchersLabDialog(
             }
         )
     }
+    evolvedResearcherId?.let { id ->
+        val researcher = scientists.firstOrNull { it.id == id }
+        AlertDialog(
+            onDismissRequest = { evolvedResearcherId = null },
+            title = { Text("PESQUISADOR EVOLUÍDO", color = SolarGold, fontWeight = FontWeight.Black) },
+            text = {
+                if (researcher != null) NexusPanel(
+                    accent = ResearcherStyle.color(researcher.rarity), modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ResearcherPortrait(researcher, 80.dp)
+                        Column {
+                            Text(researcher.name, fontWeight = FontWeight.Black)
+                            Text("Nível ${researcher.level}", color = ResearcherStyle.color(researcher.rarity))
+                            Text("${ResearcherStyle.label(researcher.rarity)} • ${researcher.description}",
+                                style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { evolvedResearcherId = null }) { Text("CONTINUAR") } },
+            containerColor = CosmicDark
+        )
+    }
 }
 
 @Composable
@@ -1398,7 +1422,7 @@ fun CapsuleShopItem(
         modifier = Modifier
             .width(135.dp)
             .border(
-                border = BorderStroke(1.dp, glowColor.copy(alpha = 0.3f)),
+                border = BorderStroke(1.5.dp, NexusVisuals.frame(glowColor)),
                 shape = RoundedCornerShape(16.dp)
             ),
         colors = CardDefaults.cardColors(containerColor = CosmicCard),
@@ -1409,7 +1433,7 @@ fun CapsuleShopItem(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = title,
+                text = title.substringBefore(' '),
                 fontWeight = FontWeight.Black,
                 fontSize = 11.sp,
                 color = TextWhite,
@@ -1447,7 +1471,7 @@ fun CapsuleShopItem(
                     color = TextMuted
                 )
                 Text(
-                    text = "$cost 💎",
+                    text = "$cost gemas",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = SolarGold
@@ -1469,7 +1493,7 @@ fun CapsuleShopItem(
                     .height(32.dp)
             ) {
                 Text(
-                    text = "ATIVAR",
+                    text = "ABRIR",
                     fontWeight = FontWeight.Black,
                     fontSize = 9.sp
                 )
@@ -2035,15 +2059,14 @@ fun BuildingProductionCard(
         else -> MaterialTheme.colorScheme.primary
     }
 
-    Card(
+    NexusPanel(
+        accent = themeColor,
+        unlocked = !isLocked,
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, themeColor.copy(alpha = 0.2f), RoundedCornerShape(14.dp))
-            .testTag("building_card_${building.id}"),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp))
+            .testTag("building_card_${building.id}")
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -2149,6 +2172,14 @@ fun BuildingProductionCard(
 
             if (!isLocked) {
                 Spacer(modifier = Modifier.height(12.dp))
+                NexusMetric(
+                    label = "Produção atual",
+                    value = if (building.isAutoSelling && hasAutoSellLicense)
+                        "+${formatCredits(runsRate * marketPrice)} C\$$productionUnit"
+                    else "+${formatAmount(runsRate)} $productionUnit",
+                    accent = if (building.isAutoSelling && hasAutoSellLicense) SuccessGreen else themeColor,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 
                 // Live production progress display
                 val transition = rememberInfiniteTransition(label = "productionLoader")
@@ -2367,12 +2398,16 @@ fun BuildingProductionCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     val targetLevel = building.level + levelsGained
-                    Text(
-                        text = if (levelsGained > 1) "Evoluir +$levelsGained (para Nív $targetLevel)" else "Evoluir para Nív $targetLevel",
-                        modifier = Modifier.weight(1f).padding(end = 8.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextMuted
-                    )
+                    val nextRate = building.copy(level = targetLevel).getActualProductionRate() *
+                        (if (building.isAutomated) totalMultiplier else energyFactor)
+                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                        Text("PRÓXIMO • NÍV $targetLevel", color = themeColor,
+                            fontSize = 10.sp, fontWeight = FontWeight.Black)
+                        Text(if (building.isAutoSelling && hasAutoSellLicense)
+                            "+${formatCredits(nextRate * marketPrice)} C\$$productionUnit"
+                            else "+${formatAmount(nextRate)} $productionUnit", color = TextWhite,
+                            fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
                     Button(
                         onClick = onUpgrade,
                         enabled = currentCash >= cost,
@@ -2381,7 +2416,7 @@ fun BuildingProductionCard(
                             disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
                         ),
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.height(32.dp)
+                        modifier = Modifier.height(40.dp)
                     ) {
                         Text(
                             text = if (levelsGained > 1) "Upgrade +$levelsGained: ${formatCredits(cost)} C\$" else "Upgrade: ${formatCredits(cost)} C\$",
@@ -2528,15 +2563,18 @@ fun CombatTab(
                 val lootGems = reward.diamonds
                 val lootTokens = reward.guildTokens
 
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isUnlocked) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f) 
-                                         else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
-                    )
+                val sectorAccent = when (stage.id) {
+                    1 -> NeonCyan
+                    2 -> Color(0xFF55B8FF)
+                    3 -> NeonMagenta
+                    else -> SolarGold
+                }
+                NexusPanel(
+                    accent = sectorAccent,
+                    unlocked = isUnlocked,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column {
                         Row(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
@@ -2571,33 +2609,25 @@ fun CombatTab(
                                         Icon(Icons.Filled.Lock, contentDescription = "Locked", tint = TextMuted, modifier = Modifier.size(14.dp))
                                     }
                                 }
-                                Text(
-                                    text = "Inimigo: HP $enemyHp • Dano $enemyDmg", 
-                                    fontSize = 12.sp, 
-                                    color = TextMuted,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Recompensa: +${formatCredits(lootCash)} C$ / +${lootGems}💎 / +${lootTokens}🛡️",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = SolarGold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
                             }
-
-                            Button(
-                                onClick = { viewModel.startCombatBattle(stage.id) },
-                                enabled = isUnlocked,
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.height(34.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp)
-                            ) {
-                                Text("Atacar", fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
-                            }
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            NexusMetric("HP INIMIGO", "$enemyHp", sectorAccent, Modifier.weight(1f))
+                            NexusMetric("DANO INIMIGO", "$enemyDmg", AlertRed, Modifier.weight(1f))
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Text("RECOMPENSA DA VITÓRIA", color = sectorAccent,
+                            fontSize = 10.sp, fontWeight = FontWeight.Black)
+                        NexusRewardRow(credits = "+${formatCredits(lootCash)} C$",
+                            gems = "+$lootGems", guild = "+$lootTokens")
+                        Spacer(Modifier.height(10.dp))
+                        Button(onClick = { viewModel.startCombatBattle(stage.id) }, enabled = isUnlocked,
+                            modifier = Modifier.fillMaxWidth().height(40.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = sectorAccent),
+                            shape = RoundedCornerShape(8.dp)) {
+                            Text(if (isUnlocked) "ATACAR SETOR" else "SETOR BLOQUEADO",
+                                fontWeight = FontWeight.ExtraBold)
                         }
                     }
                 }
@@ -3018,19 +3048,16 @@ fun LiveCombatArenaScreen(
 
             when (status) {
                 is CombatStatus.Victory -> {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = SuccessGreen.copy(alpha = 0.15f)),
+                    NexusPanel(
+                        accent = SuccessGreen,
                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                     ) {
-                        Column(modifier = Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("🛡️ VITÓRIA SETORIAL!", fontWeight = FontWeight.Black, color = SuccessGreen, fontSize = 16.sp)
-                            Text("Ameaça raider totalmente neutralizada. Recompensas resgatadas:", fontSize = 12.sp, color = TextWhite)
+                        Column {
+                            Text("VITÓRIA SETORIAL", fontWeight = FontWeight.Black, color = SuccessGreen, fontSize = 19.sp)
+                            Text("Ameaça neutralizada • recompensas coletadas", fontSize = 12.sp, color = TextMuted)
                             Spacer(modifier = Modifier.height(8.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                Text("+${status.credits} Créditos", color = SuccessGreen, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                Text("+${status.gems} Gemas", color = SolarGold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                Text("+${status.guildTokens} Alianças", color = NeonCyan, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            }
+                            NexusRewardRow(credits = "+${formatCredits(status.credits)} C$",
+                                gems = "+${status.gems}", guild = "+${status.guildTokens}")
                         }
                     }
                     Button(onClick = onClose, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
@@ -3599,20 +3626,18 @@ fun AscensionTab(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         com.example.ui.StellarLaboratory(state, viewModel)
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.15f)),
-            border = BorderStroke(1.5.dp, SolarGold)
+        NexusPanel(
+            accent = SolarGold,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "Ascensão Estelar 💥",
+                        "ASCENSÃO ESTELAR",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = SolarGold
@@ -3642,7 +3667,7 @@ fun AscensionTab(
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text("Seus Star Cores:", fontSize = 11.sp, color = TextMuted)
-                        Text("${state.nebulaCores} ✨", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = SolarGold)
+                        Text("${state.nebulaCores}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = SolarGold)
                     }
                 }
                 
@@ -3656,17 +3681,22 @@ fun AscensionTab(
             }
         }
 
-        Card(
+        NexusPanel(
+            accent = if (showPrestigeButton) SolarGold else NexusVisuals.locked,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+            unlocked = showPrestigeButton
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column {
                 Text("Processar Fenda de Ascensão", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextWhite)
+                Spacer(modifier = Modifier.height(8.dp))
+                NexusMetric("Créditos para ascender",
+                    "${formatCredits(currentCash)} / ${formatCredits(minCashRequired)} C$",
+                    if (showPrestigeButton) SolarGold else TextMuted, Modifier.fillMaxWidth())
                 Spacer(modifier = Modifier.height(8.dp))
 
                 if (showPrestigeButton) {
+                    NexusRewardRow(cores = "+$earnedCoresNow")
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         "Sua corporação alcançou os requisitos! Ao ascender agora, você resetará o progresso físico e receberá +$earnedCoresNow Star Cores ✨ imediatamente.",
                         fontSize = 12.sp,
@@ -3755,20 +3785,18 @@ fun ShopAndEventTab(
     ) {
         RewardedAdsCard()
         // Seasonal Event Section
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = BorderStroke(1.dp, SolarGold.copy(alpha = 0.5f))
+        NexusPanel(
+            accent = SolarGold,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "🏆 EVENTO SAZONAL: ${event.name}",
+                        text = "EVENTO SAZONAL: ${event.name}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Black,
                         color = SolarGold
@@ -3790,7 +3818,8 @@ fun ShopAndEventTab(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                        colors = CardDefaults.cardColors(containerColor = CosmicCard),
+                        border = BorderStroke(1.dp, SolarGold.copy(alpha = 0.25f))
                     ) {
                         Row(
                             modifier = Modifier.padding(10.dp),
@@ -3833,13 +3862,11 @@ fun ShopAndEventTab(
         Text("Compras reais ainda não integradas. Demonstrações gratuitas disponíveis apenas no debug.", fontSize = 12.sp, color = TextMuted)
 
         // VIP Subscription purchase
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
+        NexusPanel(
+            accent = SolarGold,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -3878,13 +3905,11 @@ fun ShopAndEventTab(
         }
 
         // Auto-venda license purchase
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.15f)),
-            border = BorderStroke(1.dp, SolarGold)
+        NexusPanel(
+            accent = NeonCyan,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -3928,7 +3953,7 @@ fun ShopAndEventTab(
                     ) {
                         Icon(Icons.Filled.Stars, contentDescription = null, modifier = Modifier.size(16.dp), tint = SolarGold)
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Desbloquear com 300 Gemas 💎", fontWeight = FontWeight.Bold)
+                        Text("Desbloquear com 300 Gemas", fontWeight = FontWeight.Bold)
                     }
                 } else {
                     Text(
@@ -4114,25 +4139,24 @@ fun GemsShopItem(
     state: GameState,
     onClick: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp))
+    NexusPanel(
+        accent = NexusVisuals.gems,
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(Icons.Filled.Stars, contentDescription = null, tint = SolarGold, modifier = Modifier.size(32.dp))
+            Icon(Icons.Filled.Diamond, contentDescription = null, tint = NexusVisuals.gems, modifier = Modifier.size(32.dp))
             Spacer(modifier = Modifier.height(6.dp))
             Text(packName, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            Text("+$rewardGems 💎", fontSize = 16.sp, fontWeight = FontWeight.Black, color = SolarGold)
+            Text("+$rewardGems GEMAS", fontSize = 16.sp, fontWeight = FontWeight.Black, color = NexusVisuals.gems)
             Spacer(modifier = Modifier.height(10.dp))
             Button(
                 onClick = onClick,
                 enabled = state.cash >= costCoins,
                 shape = RoundedCornerShape(6.dp),
-                modifier = Modifier.fillMaxWidth().height(32.dp)
+                modifier = Modifier.fillMaxWidth().height(40.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = NexusVisuals.gems)
             ) {
                 Text("${formatAmount(costCoins)} C\$", fontSize = 10.sp)
             }
