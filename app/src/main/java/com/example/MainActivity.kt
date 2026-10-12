@@ -705,6 +705,7 @@ fun MissionsDialog(
     missions: List<ActiveMission>,
     onDismiss: () -> Unit
 ) {
+    val researchers by viewModel.researchers.collectAsStateWithLifecycle()
     var rewardScience by remember { mutableStateOf<Long?>(null) }
     var rewardGems by remember { mutableStateOf<Long?>(null) }
     var rewardCapType by remember { mutableStateOf<String?>(null) }
@@ -892,7 +893,7 @@ fun MissionsDialog(
             },
             text = {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp).verticalScroll(rememberScrollState()),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
@@ -907,17 +908,7 @@ fun MissionsDialog(
                     }
                     Divider(color = MaterialTheme.colorScheme.outlineVariant)
                     Text("CARTAS CIENTÍFICAS OBTIDAS:", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    if (rewardCards.isEmpty()) {
-                        Text("(Nenhuma carta nova, apenas recursos)", style = MaterialTheme.typography.bodySmall, color = TextMuted)
-                    } else {
-                        rewardCards.forEach { card ->
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(4.dp)).padding(6.dp)) {
-                                Icon(Icons.Filled.CardMembership, contentDescription = null, tint = SolarGold, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(card, fontWeight = FontWeight.Bold, color = TextWhite, fontSize = 13.sp)
-                            }
-                        }
-                    }
+                    ResearcherRewardCards(rewardCards, researchers)
                 }
             },
             confirmButton = {
@@ -1263,7 +1254,7 @@ fun ResearchersLabDialog(
             onDismissRequest = { showShopAlert = false },
             title = {
                 Text(
-                    text = "🚀 CÁPSULA REVELADA! 🚀",
+                    text = "CÁPSULA REVELADA",
                     fontWeight = FontWeight.Black,
                     color = SolarGold,
                     fontSize = 18.sp,
@@ -1272,7 +1263,7 @@ fun ResearchersLabDialog(
             },
             text = {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp).verticalScroll(rememberScrollState()),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
@@ -1308,20 +1299,7 @@ fun ResearchersLabDialog(
                         fontSize = 12.sp
                     )
 
-                    Row(
-                        modifier = Modifier
-                            .background(Color.Black.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
-                            .border(1.dp, CosmicBorder, RoundedCornerShape(10.dp))
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "+${shopScienceGain ?: 0} 🧪 Tokens de Ciência",
-                            fontWeight = FontWeight.Black,
-                            color = SolarGold,
-                            fontSize = 14.sp
-                        )
-                    }
+                    ScienceReward(shopScienceGain ?: 0)
 
                     Text(
                         text = "CARTAS DE PESQUISADORES:",
@@ -1331,47 +1309,7 @@ fun ResearchersLabDialog(
                         letterSpacing = 0.8.sp
                     )
 
-                    if (shopCardsObtained.isEmpty()) {
-                        Text(
-                            text = "(Nenhum cientista extra duplicado, mas a ciência soma!)",
-                            fontSize = 11.sp,
-                            color = TextMuted,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                        )
-                    } else {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            shopCardsObtained.forEach { card ->
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(
-                                            color = Color.White.copy(alpha = 0.03f),
-                                            shape = RoundedCornerShape(8.dp)
-                                        )
-                                        .border(1.dp, CosmicBorder, RoundedCornerShape(8.dp))
-                                        .padding(8.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.CardMembership,
-                                        contentDescription = null,
-                                        tint = SolarGold,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = card,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp,
-                                        color = TextWhite
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    ResearcherRewardCards(shopCardsObtained, scientists)
                 }
             },
             confirmButton = {
@@ -1629,107 +1567,41 @@ fun ScientistDossierCard(
     currentScience: Long,
     onUpgrade: () -> Unit
 ) {
-    val rColor = when (r.rarity) {
-        "COMMON" -> Color(0xFF90A4AE)
-        "RARE" -> Color(0xFF2196F3)
-        "EPIC" -> Color(0xFF9C27B0)
-        "SUPREME" -> Color(0xFFFFD700)
-        else -> Color.White
-    }
+    val rColor = ResearcherStyle.color(r.rarity)
+    val rarityName = ResearcherStyle.label(r.rarity)
 
-    val rarityName = when (r.rarity) {
-        "COMMON" -> "COMUM"
-        "RARE" -> "RARO"
-        "EPIC" -> "ÉPICO"
-        "SUPREME" -> "SUPREMO"
-        else -> r.rarity
-    }
-
-    val sciImage = when (r.id) {
-        1 -> R.drawable.img_sci_elon
-        2 -> R.drawable.img_sci_curie
-        3 -> R.drawable.img_sci_ada
-        4 -> R.drawable.img_sci_albert
-        5 -> R.drawable.img_sci_karl
-        6 -> R.drawable.img_sci_nebula
-        else -> R.drawable.img_scientist_card
-    }
-
-    val glowBrush = Brush.linearGradient(
-        colors = listOf(
-            rColor.copy(alpha = 0.8f),
-            rColor.copy(alpha = 0.1f),
-            rColor.copy(alpha = 0.7f)
-        )
-    )
+    val glowBrush = ResearcherStyle.frame(rColor)
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .border(
-                border = BorderStroke(1.2.dp, glowBrush),
+                border = BorderStroke(2.dp, glowBrush),
                 shape = RoundedCornerShape(16.dp)
             ),
         colors = CardDefaults.cardColors(containerColor = CosmicCard)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.background(Brush.verticalGradient(listOf(rColor.copy(alpha = 0.16f), CosmicCard))).padding(14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Scientist Artwork (Left)
-                Box(
-                    modifier = Modifier
-                        .size(65.dp)
-                        .background(rColor.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
-                        .border(1.5.dp, rColor.copy(alpha = 0.4f), RoundedCornerShape(12.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    SafeImage(
-                        resId = sciImage,
-                        contentDescription = r.name,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(12.dp)),
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                        fallbackIcon = Icons.Filled.Person,
-                        fallbackTint = rColor
-                    )
-                }
+                ResearcherPortrait(r, 96.dp)
 
                 Spacer(modifier = Modifier.width(12.dp))
 
                 // Mid Text info: Name, Rarity, Level
                 Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = r.name,
-                            fontWeight = FontWeight.Black,
-                            style = MaterialTheme.typography.titleSmall,
-                            color = TextWhite,
-                            fontSize = 15.sp
-                        )
-                        Box(
-                            modifier = Modifier
-                                .background(rColor.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
-                                .padding(horizontal = 5.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = rarityName,
-                                fontSize = 8.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = rColor
-                            )
-                        }
-                    }
+                    Text(rarityName, fontSize = 10.sp, fontWeight = FontWeight.Black,
+                        color = rColor, letterSpacing = 1.sp)
+                    Text(r.name, fontWeight = FontWeight.Black, color = TextWhite,
+                        fontSize = 17.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     
                     Spacer(modifier = Modifier.height(2.dp))
                     
                     Text(
-                        text = if (r.level == 0) "Não Recrutado" else "Nível ${r.level}",
+                        text = if (r.level == 0) "NÃO RECRUTADO" else "ATIVO • nível ${r.level}",
                         style = MaterialTheme.typography.bodySmall,
                         color = if (r.level > 0) SuccessGreen else TextMuted,
                         fontWeight = FontWeight.Bold,
@@ -1737,25 +1609,6 @@ fun ScientistDossierCard(
                     )
                 }
                 
-                // Upgrade action button on far right
-                val canUpgrade = r.cardsCollected >= r.cardsNeededToUpgrade && currentScience >= r.getUpgradeScienceCost()
-                Button(
-                    onClick = onUpgrade,
-                    enabled = canUpgrade,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (canUpgrade) rColor else Color.White.copy(alpha = 0.04f),
-                        contentColor = if (canUpgrade) (if (rColor == SolarGold) Color.Black else Color.White) else TextMuted.copy(alpha = 0.6f)
-                    ),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.height(34.dp)
-                ) {
-                    Text(
-                        text = "${r.getUpgradeScienceCost()} 🧪",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                }
             }
             
             Spacer(modifier = Modifier.height(10.dp))
@@ -1767,13 +1620,19 @@ fun ScientistDossierCard(
                     .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
                     .padding(8.dp)
             ) {
-                Text(
-                    text = r.description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextWhite.copy(alpha = 0.85f),
-                    fontSize = 11.sp,
-                    lineHeight = 14.sp
-                )
+                Column {
+                    val role = when (r.boostType) {
+                        "PRODUCTION" -> "PRODUÇÃO"
+                        "SPEED" -> "VELOCIDADE"
+                        "COST_REDUCTION" -> "EFICIÊNCIA"
+                        "COMRADE_GEN" -> "EQUIPE"
+                        else -> "PESQUISA"
+                    }
+                    Text(role, color = rColor, fontSize = 10.sp, fontWeight = FontWeight.Black,
+                        letterSpacing = 1.sp)
+                    Text(r.description, style = MaterialTheme.typography.bodySmall,
+                        color = TextWhite.copy(alpha = 0.9f), fontSize = 11.sp, lineHeight = 14.sp)
+                }
             }
             
             Spacer(modifier = Modifier.height(10.dp))
@@ -1803,6 +1662,21 @@ fun ScientistDossierCard(
                     fontWeight = FontWeight.Bold,
                     color = if (r.cardsCollected >= r.cardsNeededToUpgrade) SuccessGreen else TextWhite
                 )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            val canUpgrade = r.cardsCollected >= r.cardsNeededToUpgrade && currentScience >= r.getUpgradeScienceCost()
+            Button(
+                onClick = onUpgrade,
+                enabled = canUpgrade,
+                colors = ButtonDefaults.buttonColors(containerColor = rColor,
+                    contentColor = if (r.rarity == "SUPREME") Color.Black else CosmicDark),
+                modifier = Modifier.fillMaxWidth().height(40.dp),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Icon(Icons.Filled.Science, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("${if (r.level == 0) "RECRUTAR" else "EVOLUIR"} • ${r.getUpgradeScienceCost()} ciência",
+                    fontSize = 11.sp, fontWeight = FontWeight.Black)
             }
         }
     }
