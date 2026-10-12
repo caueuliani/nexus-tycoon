@@ -25,6 +25,7 @@ data class GameState(
     val isSubscribed: Boolean = false,
     val highestCombatStage: Int = 1,
     val hasAutoSellLicense: Boolean = false,
+    @ColumnInfo(defaultValue = "'NONE'") val autoSellLicenseSource: String = "NONE",
     val stage1CompletedCount: Int = 0,
     val stage2CompletedCount: Int = 0,
     val stage3CompletedCount: Int = 0,
@@ -164,8 +165,19 @@ data class CombatUnit(
 @Entity(tableName = "ad_reward_receipts")
 data class AdRewardReceipt(@PrimaryKey val token: String, val rewardedAt: Long)
 
+@Entity(tableName = "play_purchase_receipts")
+data class PlayPurchaseReceipt(
+    @PrimaryKey val tokenHash: String,
+    val productId: String,
+    val grantedAt: Long
+)
+
 @Dao
 interface GameDao {
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertPlayReceipt(receipt: PlayPurchaseReceipt): Long
+    @Query("SELECT * FROM play_purchase_receipts")
+    suspend fun getPlayReceipts(): List<PlayPurchaseReceipt>
     @Insert suspend fun insertBattle(battle: CombatBattle)
     @Query("SELECT * FROM combat_battles WHERE id = :id")
     suspend fun getBattle(id: String): CombatBattle?
@@ -282,13 +294,25 @@ interface GameDao {
         ResearcherCard::class,
         ActiveMission::class,
         CombatBattle::class,
-        AdRewardReceipt::class
+        AdRewardReceipt::class,
+        PlayPurchaseReceipt::class
     ],
-    version = 11,
+    version = 13,
     exportSchema = false
 )
 abstract class GameDatabase : RoomDatabase() {
     companion object {
+        val MIGRATION_12_13 = object : androidx.room.migration.Migration(12, 13) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE game_state ADD COLUMN autoSellLicenseSource TEXT NOT NULL DEFAULT 'NONE'")
+                db.execSQL("UPDATE game_state SET autoSellLicenseSource = 'LEGACY' WHERE hasAutoSellLicense = 1")
+            }
+        }
+        val MIGRATION_11_12 = object : androidx.room.migration.Migration(11, 12) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS play_purchase_receipts (tokenHash TEXT NOT NULL, productId TEXT NOT NULL, grantedAt INTEGER NOT NULL, PRIMARY KEY(tokenHash))")
+            }
+        }
         val MIGRATION_10_11 = object : androidx.room.migration.Migration(10, 11) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE IF NOT EXISTS combat_battles (id TEXT NOT NULL, sector INTEGER NOT NULL, enemyLevel INTEGER NOT NULL, credits REAL NOT NULL, diamonds INTEGER NOT NULL, guildTokens INTEGER NOT NULL, status TEXT NOT NULL, PRIMARY KEY(id))")

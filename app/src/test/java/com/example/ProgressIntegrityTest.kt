@@ -142,7 +142,7 @@ class ProgressIntegrityTest {
         } finally { db.close() }
     }
 
-    @Test fun v2v3v4RestoreAndAdReceiptsRemainCompatible() = runBlocking {
+    @Test fun v2v3v4v5RestoreAndAdReceiptsRemainCompatible() = runBlocking {
         val db = memory(); val targetDb = memory()
         try {
             val repo = GameRepository(db); repo.checkAndInitialize()
@@ -153,8 +153,9 @@ class ProgressIntegrityTest {
             cloud.restoreFromPayload(target, payload)
             assertFalse(target.grantAdReward("paid-on-source"))
             assertEquals(5L, target.getGameStateDirect()!!.starGems)
-            for (version in listOf(2, 3)) {
-                cloud.restoreFromPayload(target, payload + ("backupVersion" to version) - "adReceipts")
+            for (version in listOf(2, 3, 4)) {
+                val legacy = payload + ("backupVersion" to version) - "autoSellLicenseSource"
+                cloud.restoreFromPayload(target, if (version < 4) legacy - "adReceipts" else legacy)
                 assertEquals(5L, target.getGameStateDirect()!!.starGems)
                 assertFalse(target.grantAdReward("paid-on-source"))
             }
@@ -167,7 +168,8 @@ class ProgressIntegrityTest {
             val repo = GameRepository(db); repo.checkAndInitialize()
             val original = repo.exportBackup()
             val state = original.state.copy(lastSavedTime = 1000, nebulaCores = 10, availableCores = 10,
-                hasAutoSellLicense = true, scienceProdLevel = 2, scienceCreditsLevel = 3, scienceComradeLevel = 2, isSubscribed = true)
+                hasAutoSellLicense = true, autoSellLicenseSource = "LEGACY",
+                scienceProdLevel = 2, scienceCreditsLevel = 3, scienceComradeLevel = 2, isSubscribed = true)
             val buildings = original.buildings.map { it.copy(level = if (it.id == 1) 1 else 8, isAutomated = true, isAutoSelling = true) }
             val researchers = original.researchers.map { it.copy(level = 2) }
             repo.restoreBackup(state, original.resources, buildings, original.combatUnits, researchers, original.missions)

@@ -9,8 +9,10 @@ suspend fun GameRepository.buyAutoSellLicense() {
     val notifications = mutableListOf<() -> Unit>()
     runProgressTransaction {
         val current = getGameStateDirect() ?: return@runProgressTransaction
+        if (current.hasAutoSellLicense) return@runProgressTransaction
         saveGameState(current.copy(
-        hasAutoSellLicense = true
+        hasAutoSellLicense = true,
+        autoSellLicenseSource = "DEMO"
         ))
     }
     notifications.forEach { it() }
@@ -30,7 +32,8 @@ suspend fun GameRepository.buyAutoSellLicenseWithGems(onSuccess: () -> Unit, onE
         }
         saveGameState(current.copy(
         starGems = current.starGems - 300,
-        hasAutoSellLicense = true
+        hasAutoSellLicense = true,
+        autoSellLicenseSource = "GEMS"
         ))
         notifications.add { onSuccess() }
     }
@@ -44,8 +47,7 @@ suspend fun GameRepository.buySubscription() {
         val current = getGameStateDirect() ?: return@runProgressTransaction
         if (current.isSubscribed) return@runProgressTransaction
         saveGameState(current.copy(
-        isSubscribed = true,
-        starGems = Math.addExact(current.starGems, 1000.toLong()) // VIP starter gift!
+        isSubscribed = true // Debug demonstration only. Paid starter gift requires a verified token.
         ))
     }
     notifications.forEach { it() }

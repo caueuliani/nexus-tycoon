@@ -47,6 +47,13 @@ class GameRepository(private val db: GameDatabase) {
                 dao.getResearchersDirect().size == 6 && dao.getActiveMissionsDirect().isNotEmpty()) {
                 "Save incompleto. Os dados foram preservados; é necessário recuperar o backup."
             }
+            // A debug/demo or restored flag is not evidence of a paid subscription.
+            if (!com.example.BuildConfig.DEBUG &&
+                (state.isSubscribed || state.autoSellLicenseSource == "DEMO")) {
+                saveValidatedState(state.copy(isSubscribed = false,
+                    hasAutoSellLicense = if (state.autoSellLicenseSource == "DEMO") false else state.hasAutoSellLicense,
+                    autoSellLicenseSource = if (state.autoSellLicenseSource == "DEMO") "NONE" else state.autoSellLicenseSource))
+            }
             return@withTransaction
         }
         check(buildingsList.isEmpty() && dao.getResourcesDirect().isEmpty() &&
@@ -679,6 +686,34 @@ class GameRepository(private val db: GameDatabase) {
         true
     }
 
+    /** Call only after a trusted server verified the token and product for this account. */
+    suspend fun applyVerifiedPlayPurchase(tokenHash: String, productId: String,
+        vip: Boolean, firstVipGift: Boolean): Boolean = db.withTransaction {
+        require(tokenHash.matches(Regex("[0-9a-f]{64}")) && productId.isNotBlank())
+        val current = dao.getGameStateDirect() ?: return@withTransaction false
+        val firstLocalGrant = dao.insertPlayReceipt(
+            PlayPurchaseReceipt(tokenHash, productId, System.currentTimeMillis())) != -1L
+        val gift = if (vip && firstLocalGrant && firstVipGift) 1000L else 0L
+        saveValidatedState(current.copy(
+            isSubscribed = if (vip) true else current.isSubscribed,
+            hasAutoSellLicense = if (vip) current.hasAutoSellLicense else true,
+            autoSellLicenseSource = if (vip || current.hasAutoSellLicense) current.autoSellLicenseSource else "PLAY",
+            starGems = Math.addExact(current.starGems, gift)
+        ))
+        firstLocalGrant
+    }
+
+    suspend fun revokeVipWhenAbsent() = db.withTransaction {
+        val current = dao.getGameStateDirect() ?: return@withTransaction
+        if (current.isSubscribed) saveValidatedState(current.copy(isSubscribed = false))
+    }
+
+    suspend fun revokePlayLicenseWhenAbsent() = db.withTransaction {
+        val current = dao.getGameStateDirect() ?: return@withTransaction
+        if (current.autoSellLicenseSource == "PLAY") saveValidatedState(current.copy(
+            hasAutoSellLicense = false, autoSellLicenseSource = "NONE"))
+    }
+
     suspend fun exportBackup(): BackupSnapshot = db.withTransaction {
         BackupSnapshot(
             requireNotNull(dao.getGameStateDirect()) { "Jogo ainda não inicializado." },
@@ -706,7 +741,10 @@ class GameRepository(private val db: GameDatabase) {
         dao.clearCombatUnits()
         dao.clearResearchers()
         dao.clearMissions()
-        saveValidatedState(state)
+        saveValidatedState(if (com.example.BuildConfig.DEBUG) state else state.copy(
+            isSubscribed = false,
+            hasAutoSellLicense = if (state.autoSellLicenseSource == "DEMO") false else state.hasAutoSellLicense,
+            autoSellLicenseSource = if (state.autoSellLicenseSource == "DEMO") "NONE" else state.autoSellLicenseSource))
         dao.saveResources(resources)
         dao.saveBuildings(buildings)
         dao.saveCombatUnits(combatUnits)
@@ -739,7 +777,9 @@ class GameRepository(private val db: GameDatabase) {
                 // Unknown schema versions must fail without deleting the player's save.
                 val db = Room.databaseBuilder(
                     context.applicationContext, GameDatabase::class.java, "nexus_tycoon.db"
-                ).addMigrations(GameDatabase.MIGRATION_8_9, GameDatabase.MIGRATION_9_10, GameDatabase.MIGRATION_10_11).build()
+                ).addMigrations(GameDatabase.MIGRATION_8_9, GameDatabase.MIGRATION_9_10,
+                    GameDatabase.MIGRATION_10_11, GameDatabase.MIGRATION_11_12,
+                    GameDatabase.MIGRATION_12_13).build()
                 val repo = GameRepository(db)
                 INSTANCE = repo
                 repo

@@ -10,6 +10,13 @@ plugins {
 val hasFirebaseConfig = file("google-services.json").isFile
 if (hasFirebaseConfig) apply(plugin = "com.google.gms.google-services")
 val productionRewardedAdUnit = providers.gradleProperty("ADMOB_REWARDED_AD_UNIT_ID").orElse("ca-app-pub-1910491454764587/7433492171").get()
+// IDs must match products created by the account owner in Play Console; blank keeps checkout off.
+val vipProductId = providers.gradleProperty("PLAY_VIP_SUBSCRIPTION_ID").orElse("").get()
+val autoSellProductId = providers.gradleProperty("PLAY_AUTOSELL_PRODUCT_ID").orElse("").get()
+val purchaseVerificationUrl = providers.gradleProperty("PLAY_PURCHASE_VERIFICATION_URL").orElse("").get()
+listOf(vipProductId, autoSellProductId).forEach { require(it.isEmpty() || Regex("[a-z0-9_.]+").matches(it)) }
+require(purchaseVerificationUrl.isEmpty() || purchaseVerificationUrl.startsWith("https://"))
+require(purchaseVerificationUrl.none { it == '"' || it == '\\' || it == '\n' || it == '\r' })
 require(productionRewardedAdUnit.isEmpty() || Regex("ca-app-pub-[0-9]+/[0-9]+").matches(productionRewardedAdUnit))
 
 android {
@@ -24,6 +31,9 @@ android {
     versionName = "1.0"
     buildConfigField("String", "FIREBASE_PROJECT_ID", "\"nexus-idle-tycoon\"")
     buildConfigField("boolean", "FIREBASE_CONFIGURED", hasFirebaseConfig.toString())
+    buildConfigField("String", "PLAY_VIP_SUBSCRIPTION_ID", "\"$vipProductId\"")
+    buildConfigField("String", "PLAY_AUTOSELL_PRODUCT_ID", "\"$autoSellProductId\"")
+    buildConfigField("String", "PLAY_PURCHASE_VERIFICATION_URL", "\"$purchaseVerificationUrl\"")
     if (!hasFirebaseConfig) resValue("string", "default_web_client_id", "")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -89,6 +99,7 @@ dependencies {
   implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
   implementation("com.google.android.libraries.ads.mobile.sdk:ads-mobile-sdk:1.5.0")
   implementation("com.google.android.ump:user-messaging-platform:4.0.0")
+  implementation("com.android.billingclient:billing:8.3.0")
   implementation(platform(libs.androidx.compose.bom))
   implementation(platform(libs.firebase.bom))
   implementation(libs.firebase.auth)

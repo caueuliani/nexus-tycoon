@@ -136,7 +136,7 @@ class StellarLabTest {
             val snapshot = repo.exportBackup()
             val cloud = CloudSaveManager(context)
             val payload = cloud.createBackupPayload(snapshot)
-            assertEquals(4, payload["backupVersion"])
+            assertEquals(5, payload["backupVersion"])
             cloud.restoreFromPayload(repo, payload)
             assertEquals(snapshot.state.copy(lastSavedTime = repo.getGameStateDirect()!!.lastSavedTime), repo.getGameStateDirect())
             assertFalse(repo.claimCoreEvent("Energy Supplier", true))

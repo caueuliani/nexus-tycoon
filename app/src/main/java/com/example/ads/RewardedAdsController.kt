@@ -31,11 +31,23 @@ class RewardedAdsController(private val activity: Activity) {
     private val repository = GameRepository.getInstance(activity.applicationContext)
     private val consent = UserMessagingPlatform.getConsentInformation(activity)
     private val preferences = activity.getSharedPreferences("ad_privacy", android.content.Context.MODE_PRIVATE)
-    private val mutableState = MutableStateFlow(RewardedAdsState(ageBand = preferences.getString("age_band", null)))
+    private val mutableState = MutableStateFlow(RewardedAdsState(
+        ageBand = preferences.getString("age_band", null),
+        rewardConfirmation = preferences.getBoolean("pending_reward_confirmation", false)
+    ))
     val state = mutableState.asStateFlow()
     private var attempt = 0
     private var shownAttempt = -1
     private var timeout: Job? = null
+
+    init {
+        if (preferences.getBoolean("pending_reward_confirmation", false)) sharedConfirmation.value = true
+        scope.launch {
+            sharedConfirmation.collect { pending ->
+                mutableState.value = mutableState.value.copy(rewardConfirmation = pending)
+            }
+        }
+    }
 
     private fun privacyRequired() = consent.privacyOptionsRequirementStatus ==
         ConsentInformation.PrivacyOptionsRequirementStatus.REQUIRED
@@ -46,7 +58,8 @@ class RewardedAdsController(private val activity: Activity) {
     }
 
     fun dismissRewardConfirmation() {
-        mutableState.value = state.value.copy(rewardConfirmation = false)
+        preferences.edit().putBoolean("pending_reward_confirmation", false).apply()
+        sharedConfirmation.value = false
     }
 
     fun cancelPending() {
@@ -138,7 +151,10 @@ class RewardedAdsController(private val activity: Activity) {
         var earned = false
         val confirmation = RewardConfirmationGate()
         fun confirmIfReady(ready: Boolean) {
-            if (ready && request == attempt) mutableState.value = state.value.copy(rewardConfirmation = true)
+            if (ready) {
+                preferences.edit().putBoolean("pending_reward_confirmation", true).apply()
+                sharedConfirmation.value = true
+            }
         }
         mutableState.value = state.value.copy(message = "Anúncio em exibição…")
         ad.adEventCallback = object : RewardedAdEventCallback {
@@ -188,6 +204,7 @@ class RewardedAdsController(private val activity: Activity) {
     }
 
     companion object {
+        private val sharedConfirmation = MutableStateFlow(false)
         private val sdkMutex = Mutex()
         private var initialization: Deferred<Unit>? = null
         private val rewardScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)

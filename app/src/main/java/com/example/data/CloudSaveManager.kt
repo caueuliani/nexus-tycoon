@@ -242,7 +242,7 @@ class CloudSaveManager(private val context: Context) {
 
             // Map data structure
             return mapOf(
-                "backupVersion" to 4,
+                "backupVersion" to 5,
                 "adReceipts" to snapshot.adReceipts.map { mapOf("token" to it.token, "rewardedAt" to it.rewardedAt) },
                 "companyName" to state.companyName,
                 "cash" to state.cash,
@@ -260,6 +260,7 @@ class CloudSaveManager(private val context: Context) {
                 "isSubscribed" to state.isSubscribed,
                 "highestCombatStage" to state.highestCombatStage,
                 "hasAutoSellLicense" to state.hasAutoSellLicense,
+                "autoSellLicenseSource" to state.autoSellLicenseSource,
                 "stage1CompletedCount" to state.stage1CompletedCount,
                 "stage2CompletedCount" to state.stage2CompletedCount,
                 "stage3CompletedCount" to state.stage3CompletedCount,
@@ -310,8 +311,8 @@ class CloudSaveManager(private val context: Context) {
     @Suppress("UNCHECKED_CAST")
     suspend fun restoreFromPayload(repository: GameRepository, payload: Map<String, Any>) {
         BackupValidation.payload(payload)
-        val version = (payload["backupVersion"] as? Number)?.toInt()
-        require(version == 2 || version == 3 || version == 4) {
+        val version = (payload["backupVersion"] as Number).toInt()
+        require(version in 2..5) {
             "Backup antigo ou incompatível. Gere um novo backup no dispositivo de origem; o progresso local foi preservado."
         }
         require(listOf("resources", "buildings", "combatUnits", "researchers", "missions").all {
@@ -321,7 +322,7 @@ class CloudSaveManager(private val context: Context) {
         require(scienceFields.all { payload[it] is Number && (payload[it] as Number).toInt() >= 0 }) {
             "Pesquisas ausentes ou inválidas no backup."
         }
-        if (version == 3 || version == 4) {
+        if (version >= 3) {
             require(listOf("availableCores", "industrialEngineeringLevel", "tacticalLogisticsLevel", "offlineReserveLevel").all { payload[it] is Number }) { "Laboratório ausente no backup." }
             require(payload["claimedCoreEvents"] is String) { "Resgates de eventos ausentes." }
         }
@@ -343,6 +344,8 @@ class CloudSaveManager(private val context: Context) {
             isSubscribed = payload["isSubscribed"] as? Boolean ?: false,
             highestCombatStage = (payload["highestCombatStage"] as? Number)?.toInt() ?: 1,
             hasAutoSellLicense = payload["hasAutoSellLicense"] as? Boolean ?: false,
+            autoSellLicenseSource = if (version >= 5) payload["autoSellLicenseSource"] as String
+                else if (payload["hasAutoSellLicense"] == true) "LEGACY" else "NONE",
             stage1CompletedCount = (payload["stage1CompletedCount"] as? Number)?.toInt() ?: 0,
             stage2CompletedCount = (payload["stage2CompletedCount"] as? Number)?.toInt() ?: 0,
             stage3CompletedCount = (payload["stage3CompletedCount"] as? Number)?.toInt() ?: 0,
@@ -420,7 +423,7 @@ class CloudSaveManager(private val context: Context) {
             )
         }
         BackupValidation.snapshot(state, resources, buildings, combatUnits, researchers, missions)
-        val receipts = if (version == 4) (payload["adReceipts"] as List<Map<String, Any>>).map {
+        val receipts = if (version >= 4) (payload["adReceipts"] as List<Map<String, Any>>).map {
             AdRewardReceipt(it["token"] as String, (it["rewardedAt"] as Number).toLong())
         } else emptyList()
         require(receipts.map { it.token }.distinct().size == receipts.size && receipts.all { it.token.isNotBlank() })

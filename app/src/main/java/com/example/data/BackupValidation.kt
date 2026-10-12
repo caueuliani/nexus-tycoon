@@ -49,6 +49,8 @@ object BackupValidation {
 
     fun state(s: GameState) {
         StellarLab.validate(s)
+        require(s.autoSellLicenseSource in setOf("NONE", "DEMO", "GEMS", "PLAY", "LEGACY"))
+        require(s.hasAutoSellLicense || s.autoSellLicenseSource == "NONE")
         require(s.id == 1 && s.companyName.isNotBlank())
         finite(s.cash); finite(s.comrades); finite(s.comradesPerSec)
         require(listOf(s.starGems, s.guildTokens, s.science, s.lastSavedTime).all { it >= 0 })
@@ -78,11 +80,13 @@ object BackupValidation {
             strings = "companyName guildName", bools = "isSubscribed hasAutoSellLicense hasCompletedTutorial")
         if ((payload["backupVersion"] as Number).toInt() >= 3) check(payload,
             ints = "industrialEngineeringLevel tacticalLogisticsLevel offlineReserveLevel", longs = "availableCores", strings = "claimedCoreEvents")
+        if ((payload["backupVersion"] as Number).toInt() >= 5) check(payload,
+            strings = "autoSellLicenseSource")
         fun rows(key: String, validate: (Map<*, *>) -> Unit) {
             val list = payload[key] as? List<*> ?: throw IllegalArgumentException("Tabela ausente: $key")
             list.forEach { validate(it as? Map<*, *> ?: throw IllegalArgumentException("Registro inválido: $key")) }
         }
-        if ((payload["backupVersion"] as Number).toInt() == 4) rows("adReceipts") { check(it, longs = "rewardedAt", strings = "token") }
+        if ((payload["backupVersion"] as Number).toInt() >= 4) rows("adReceipts") { check(it, longs = "rewardedAt", strings = "token") }
         rows("resources") { check(it, doubles = "quantity", strings = "name") }
         rows("buildings") {
             check(it, ints = "id level", doubles = "baseCost costMultiplier productionRatePerLevel inputAmountPerSec",

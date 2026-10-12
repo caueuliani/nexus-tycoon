@@ -52,6 +52,15 @@ import kotlin.math.pow
 
 class MainActivity : ComponentActivity() {
     val rewardedAds by lazy { com.example.ads.RewardedAdsController(this) }
+    val playBilling by lazy { com.example.billing.PlayBillingController(this) }
+    override fun onResume() {
+        super.onResume()
+        playBilling.onResume()
+    }
+    override fun onDestroy() {
+        playBilling.close()
+        super.onDestroy()
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -3775,6 +3784,10 @@ fun ShopAndEventTab(
     state: GameState
 ) {
     val event by viewModel.seasonalChampionship.collectAsStateWithLifecycle()
+    val billing = (androidx.activity.compose.LocalActivity.current as? MainActivity)?.playBilling
+    val purchaseStates = billing?.state?.collectAsStateWithLifecycle()?.value.orEmpty()
+    val vipPurchase = purchaseStates[com.example.billing.PlayProduct.VIP]
+    val licensePurchase = purchaseStates[com.example.billing.PlayProduct.AUTO_SELL]
 
     Column(
         modifier = Modifier
@@ -3796,13 +3809,13 @@ fun ShopAndEventTab(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "EVENTO SAZONAL: ${event.name}",
+                        text = "EVENTO LOCAL: ${event.name}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Black,
                         color = SolarGold
                     )
                     Badge(containerColor = SolarGold) {
-                        Text("${event.activeDaysRemaining}d restantes", modifier = Modifier.padding(2.dp), fontWeight = FontWeight.Bold)
+                        Text("Objetivos locais", modifier = Modifier.padding(2.dp), fontWeight = FontWeight.Bold)
                     }
                 }
                 Spacer(modifier = Modifier.height(6.dp))
@@ -3859,7 +3872,8 @@ fun ShopAndEventTab(
         }
 
         Text("Loja Estelar & Assinaturas Premium", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Text("Compras reais ainda não integradas. Demonstrações gratuitas disponíveis apenas no debug.", fontSize = 12.sp, color = TextMuted)
+        Text("Compras em dinheiro real exigem produtos na Play Console e verificação no servidor. Trocas por créditos e gemas são do jogo.",
+            fontSize = 12.sp, color = TextMuted)
 
         // VIP Subscription purchase
         NexusPanel(
@@ -3879,20 +3893,28 @@ fun ShopAndEventTab(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "• +50% Velocidade de toda a produção idle\n• Multiplicador VIP em lucros off-line\n• Resgata 1,000 Gemas Estelares instantâneas",
+                    text = "• +50% Velocidade de toda a produção idle\n• Multiplicador VIP em lucros off-line\n• 1.000 Gemas iniciais somente após compra verificada",
                     fontSize = 12.sp,
                     color = TextWhite
                 )
                 Spacer(modifier = Modifier.height(14.dp))
                 if (!state.isSubscribed) {
                     Button(
-                        onClick = { viewModel.buySubscription() },
-                        enabled = BuildConfig.DEBUG,
+                        onClick = {
+                            if (BuildConfig.DEBUG) viewModel.buySubscription()
+                            else billing?.buy(com.example.billing.PlayProduct.VIP)
+                        },
+                        enabled = BuildConfig.DEBUG || vipPurchase?.phase == com.example.billing.PurchasePhase.AVAILABLE,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text(if (BuildConfig.DEBUG) "Ativar VIP de demonstração" else "Assinatura indisponível", fontWeight = FontWeight.Black)
+                        Text(if (BuildConfig.DEBUG) "Ativar VIP de demonstração"
+                            else if (vipPurchase?.phase == com.example.billing.PurchasePhase.AVAILABLE)
+                                "Assinar VIP • ${vipPurchase.price ?: "Google Play"}"
+                            else "Assinatura indisponível", fontWeight = FontWeight.Black)
                     }
+                    Text(vipPurchase?.message ?: "Consultando Google Play…", color = TextMuted,
+                        style = MaterialTheme.typography.bodySmall)
                 } else {
                     Text(
                         "Benefícios locais ativos. Esta tela não comprova uma assinatura paga.",
@@ -3936,6 +3958,17 @@ fun ShopAndEventTab(
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Text(if (BuildConfig.DEBUG) "Ativar licença de demonstração" else "Compras indisponíveis", fontWeight = FontWeight.Black)
+                    }
+                    if (!BuildConfig.DEBUG) {
+                        Button(onClick = { billing?.buy(com.example.billing.PlayProduct.AUTO_SELL) },
+                            enabled = licensePurchase?.phase == com.example.billing.PurchasePhase.AVAILABLE,
+                            modifier = Modifier.fillMaxWidth()) {
+                            Text(if (licensePurchase?.phase == com.example.billing.PurchasePhase.AVAILABLE)
+                                "Comprar licença • ${licensePurchase.price ?: "Google Play"}"
+                                else "Compra real indisponível")
+                        }
+                        Text(licensePurchase?.message ?: "Consultando Google Play…", color = TextMuted,
+                            style = MaterialTheme.typography.bodySmall)
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
