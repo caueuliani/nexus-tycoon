@@ -97,7 +97,7 @@ class ProgressIntegrityTest {
             assertEquals(1, ranked.get())
             val state = repo.getGameStateDirect()!!
             assertEquals(2, state.playerRank); assertEquals(0, state.completedRankMissions)
-            assertEquals(15L + 20 + 30 + 70 + 1000, state.starGems)
+            assertEquals(15L + 20 + 30 + 70, state.starGems)
             assertEquals(50L + 80 + 150 + 200, state.science)
         } finally { db.close() }
     }

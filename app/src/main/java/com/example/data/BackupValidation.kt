@@ -30,7 +30,9 @@ object BackupValidation {
             require(r.targetBuildingId in 0..8 && r.rarity in setOf("COMMON", "RARE", "EPIC", "SUPREME"))
             require(r.boostType in setOf("PRODUCTION", "SPEED", "COST_REDUCTION", "COMRADE_GEN", "GLOBAL"))
         }
-        require(missions.map { it.id }.sorted() == (1..3).toList())
+        require(missions.isNotEmpty() && missions.all { it.id > 0 } &&
+            missions.map { it.id }.distinct().size == missions.size &&
+            missions.count { !it.isClaimed } <= missionLimitForRank(s.playerRank))
         missions.forEach { m ->
             finite(m.progress); finite(m.target)
             require(m.target > 0 && m.progress <= m.target && (!m.isClaimed || m.isCompleted))

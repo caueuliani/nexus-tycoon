@@ -185,7 +185,7 @@ suspend fun GameRepository.claimMissionReward(missionId: Int, onSuccess: (Long, 
         val m = getActiveMissionsDirect().find { it.id == missionId } ?: return@runProgressTransaction
         if (!m.isCompleted || m.isClaimed) return@runProgressTransaction
 
-        // Mark as claimed
+        // Retain the claimed ID so delayed duplicate callbacks cannot match a replacement.
         updateActiveMission(m.copy(isClaimed = true))
 
         val scienceReward = m.rewardScience
@@ -222,12 +222,13 @@ suspend fun GameRepository.claimMissionReward(missionId: Int, onSuccess: (Long, 
 
         saveResearchers(updatedScientists)
 
-        val nextCompleted = freshState.completedRankMissions + 1
+        val nextCompleted = (freshState.completedRankMissions + 1).coerceAtMost(3)
         saveGameState(freshState.copy(
         starGems = Math.addExact(freshState.starGems, gemsReward.toLong()),
         science = Math.addExact(freshState.science, scienceReward.toLong()),
         completedRankMissions = nextCompleted
         ))
+        fillMissionSlots(freshState.playerRank)
 
         notifications.add { onSuccess(gemsReward, scienceReward, m.rewardCapsuleType, obtainedCards) }
     }
@@ -238,49 +239,10 @@ suspend fun GameRepository.rankUpPlayer(onSuccess: (Int, Long, List<String>) -> 
     val notifications = mutableListOf<() -> Unit>()
     runProgressTransaction {
         val freshState = getGameStateDirect() ?: return@runProgressTransaction
-        if (freshState.completedRankMissions < 3 || getActiveMissionsDirect().any { !it.isClaimed }) return@runProgressTransaction
+        if (freshState.completedRankMissions < 3) return@runProgressTransaction
         val nextRank = freshState.playerRank + 1
-        val newMissions = listOf(
-        ActiveMission(
-        id = 1,
-        description = "Possuir ${3 + nextRank * 2} Sol-Power Arrays",
-        progress = 0.0,
-        target = (3 + nextRank * 2).toDouble(),
-        isCompleted = false,
-        isClaimed = false,
-        missionType = "OWN_BUILDING",
-        targetId = 1,
-        rewardGems = (10 + nextRank * 5).toLong(),
-        rewardScience = (40 + nextRank * 20).toLong(),
-        rewardCapsuleType = if (nextRank % 3 == 0) "SUPREMA" else "EPICA"
-        ),
-        ActiveMission(
-        id = 2,
-        description = "Coletar ${formatCredits(500.0 * 2.5.pow(nextRank - 1))} de ${getBuildingResourceNameByRank(nextRank)}",
-        progress = 0.0,
-        target = 500.0 * 2.5.pow(nextRank - 1),
-        isCompleted = false,
-        isClaimed = false,
-        missionType = "COLLECT_RESOURCE",
-        targetString = getBuildingResourceNameByRank(nextRank),
-        rewardGems = (15 + nextRank * 5).toLong(),
-        rewardScience = (50 + nextRank * 20).toLong(),
-        rewardCapsuleType = "EPICA"
-        ),
-        ActiveMission(
-        id = 3,
-        description = "Acumular ${formatCredits(8000.0 * 4.0.pow(nextRank - 1))} de Créditos (C$)",
-        progress = 0.0,
-        target = 8000.0 * 4.0.pow(nextRank - 1),
-        isCompleted = false,
-        isClaimed = false,
-        missionType = "EARN_CASH",
-        rewardGems = (20 + nextRank * 5).toLong(),
-        rewardScience = (60 + nextRank * 20).toLong(),
-        rewardCapsuleType = "SUPREMA"
-        )
-        )
-        saveActiveMissions(newMissions)
+        // Existing missions retain their IDs and progress; only unlocked slots are added.
+        fillMissionSlots(nextRank)
 
         val scientists = getResearchersDirect()
         val rewardScienceGain = (100 * nextRank).toLong()
@@ -341,19 +303,3 @@ suspend fun GameRepository.purchaseScienceUpgrade(upgradeType: String, onSuccess
     }
     notifications.forEach { it() }
 }
-
-private fun getBuildingResourceNameByRank(rank: Int): String {
-    return when (rank % 8) {
-        1 -> "Energy Cell"
-        2 -> "Iron Ore"
-        3 -> "Hyperalloy"
-        4 -> "Quantum Chip"
-        5 -> "Organic Feedstock"
-        6 -> "Neural Implant"
-        7 -> "Antimatter Containment"
-        0 -> "Warp Drive"
-        else -> "Energy Cell"
-    }
-}
-
-private fun formatCredits(amount: Double): String = com.example.ui.compactNumber(amount)

@@ -798,13 +798,13 @@ fun MissionsDialog(
                         }
                     }
 
-                    Text("Lista de Missões Ativas:", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
+                    Text("Missões ativas (${missions.count { !it.isClaimed }}/${com.example.data.missionLimitForRank(state.playerRank)}):", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
 
                     if (missions.isEmpty()) {
                         Text("Nenhuma missão ativa carregada.", color = TextMuted)
                     }
 
-                    missions.forEach { m ->
+                    missions.filterNot { it.isClaimed }.forEach { m ->
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             border = BorderStroke(1.dp, if (m.isCompleted && !m.isClaimed) SolarGold else Color.Transparent),

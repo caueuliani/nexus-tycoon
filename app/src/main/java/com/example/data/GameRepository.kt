@@ -56,7 +56,7 @@ class GameRepository(private val db: GameDatabase) {
         if (state != null) {
             check(buildingsList.map { it.id }.sorted() == (1..8).toList() &&
                 dao.getResourcesDirect().size == 8 && dao.getCombatUnitsDirect().size == 4 &&
-                dao.getResearchersDirect().size == 6 && dao.getActiveMissionsDirect().isNotEmpty()) {
+                dao.getResearchersDirect().size == 6) {
                 "Save incompleto. Os dados foram preservados; é necessário recuperar o backup."
             }
             // Old LEGACY flags cannot distinguish gem purchases from demo grants.
@@ -64,6 +64,7 @@ class GameRepository(private val db: GameDatabase) {
                 val safeState = withoutUnverifiedReleaseEntitlements(state)
                 if (safeState != state) saveValidatedState(safeState)
             }
+            dao.saveActiveMissions(missingMissions(state.playerRank, dao.getActiveMissionsDirect()))
             return@withTransaction
         }
         check(buildingsList.isEmpty() && dao.getResourcesDirect().isEmpty() &&
@@ -762,6 +763,7 @@ class GameRepository(private val db: GameDatabase) {
         dao.saveCombatUnits(combatUnits)
         dao.saveResearchers(researchers)
         dao.saveActiveMissions(missions)
+        dao.saveActiveMissions(missingMissions(state.playerRank, dao.getActiveMissionsDirect()))
         check(dao.getBuildingsDirect() == buildings.sortedBy { it.id }) {
             "Os níveis das fábricas não puderam ser restaurados."
         }
@@ -779,6 +781,8 @@ class GameRepository(private val db: GameDatabase) {
     suspend fun updateActiveMission(m: ActiveMission) = dao.updateActiveMission(m)
     suspend fun saveActiveMissions(list: List<ActiveMission>) = dao.saveActiveMissions(list)
     suspend fun getActiveMissionsDirect(): List<ActiveMission> = dao.getActiveMissionsDirect()
+
+    suspend fun fillMissionSlots(rank: Int) = dao.saveActiveMissions(missingMissions(rank, dao.getActiveMissionsDirect()))
 
     companion object {
         @Volatile
