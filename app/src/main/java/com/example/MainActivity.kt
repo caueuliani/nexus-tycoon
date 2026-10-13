@@ -336,64 +336,62 @@ fun MainAppContent(viewModel: GameViewModel) {
                     modifier = Modifier.testTag("mobile_bottom_bar"),
                     containerColor = MaterialTheme.colorScheme.surface
                 ) {
-                    Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
                     NavigationBarItem(
                         selected = activeTab == 0,
                         onClick = { activeTab = 0 },
                         icon = { Icon(Icons.Filled.Business, contentDescription = null) },
-                        label = { Text("Indústria", maxLines = 1) },
-                        alwaysShowLabel = true,
-                        modifier = Modifier.width(80.dp).testTag("nav_industry")
+                        label = { Text("Indústria", fontSize = 9.sp, maxLines = 1) },
+                        alwaysShowLabel = false,
+                        modifier = Modifier.testTag("nav_industry")
                     )
                     NavigationBarItem(
                         selected = activeTab == 1,
                         onClick = { activeTab = 1 },
                         icon = { Icon(Icons.Filled.Security, contentDescription = null) },
-                        label = { Text("Defesa", maxLines = 1) },
-                        alwaysShowLabel = true,
-                        modifier = Modifier.width(80.dp).testTag("nav_combat")
+                        label = { Text("Defesa", fontSize = 9.sp, maxLines = 1) },
+                        alwaysShowLabel = false,
+                        modifier = Modifier.testTag("nav_combat")
                     )
                     NavigationBarItem(
                         selected = activeTab == 2,
                         onClick = { activeTab = 2 },
                         icon = { Icon(Icons.Filled.TrendingUp, contentDescription = null) },
-                        label = { Text("Mercado", maxLines = 1) },
-                        alwaysShowLabel = true,
-                        modifier = Modifier.width(80.dp).testTag("nav_market")
+                        label = { Text("Mercado", fontSize = 9.sp, maxLines = 1) },
+                        alwaysShowLabel = false,
+                        modifier = Modifier.testTag("nav_market")
                     )
                     NavigationBarItem(
                         selected = activeTab == 3,
                         onClick = { activeTab = 3 },
                         icon = { Icon(Icons.Filled.Group, contentDescription = null) },
-                        label = { Text("Aliança", maxLines = 1) },
-                        alwaysShowLabel = true,
-                        modifier = Modifier.width(80.dp).testTag("nav_guild")
+                        label = { Text("Aliança", fontSize = 9.sp, maxLines = 1) },
+                        alwaysShowLabel = false,
+                        modifier = Modifier.testTag("nav_guild")
                     )
                     NavigationBarItem(
                         selected = activeTab == 4,
                         onClick = { activeTab = 4 },
                         icon = { Icon(Icons.Filled.AccountCircle, contentDescription = null) },
-                        label = { Text("Perfil", maxLines = 1) },
-                        alwaysShowLabel = true,
-                        modifier = Modifier.width(80.dp).testTag("nav_profile")
+                        label = { Text("Perfil", fontSize = 9.sp, maxLines = 1) },
+                        alwaysShowLabel = false,
+                        modifier = Modifier.testTag("nav_profile")
                     )
                     NavigationBarItem(
                         selected = activeTab == 5,
                         onClick = { activeTab = 5 },
                         icon = { Icon(Icons.Filled.Autorenew, contentDescription = null) },
-                        label = { Text("Ascensão", maxLines = 1) },
-                        alwaysShowLabel = true,
-                        modifier = Modifier.width(80.dp).testTag("nav_ascension")
+                        label = { Text("Ascensão", fontSize = 9.sp, maxLines = 1) },
+                        alwaysShowLabel = false,
+                        modifier = Modifier.testTag("nav_ascension")
                     )
                     NavigationBarItem(
                         selected = activeTab == 6,
                         onClick = { activeTab = 6 },
                         icon = { Icon(Icons.Filled.ShoppingBag, contentDescription = null) },
-                        label = { Text("Premium", maxLines = 1) },
-                        alwaysShowLabel = true,
-                        modifier = Modifier.width(80.dp).testTag("nav_premium")
+                        label = { Text("Premium", fontSize = 9.sp, maxLines = 1) },
+                        alwaysShowLabel = false,
+                        modifier = Modifier.testTag("nav_premium")
                     )
-                    }
                 }
             }
         ) { innerPadding ->
@@ -2082,106 +2080,81 @@ fun BuildingProductionCard(
         Column {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f).padding(end = 8.dp)
-                ) {
-                    // Animating spinning/rotating icon gear representing live industrial factory outputs
-                    Box(
-                        modifier = Modifier
-                            .padding(end = 12.dp)
-                            .size(38.dp)
-                            .background(
-                                if (isLocked) TextMuted.copy(alpha = 0.1f) else themeColor.copy(alpha = 0.15f),
-                                CircleShape
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = buildingIcon,
-                            contentDescription = null,
-                            tint = if (isLocked) TextMuted else themeColor,
-                            modifier = Modifier
-                                .size(20.dp)
-                                .rotate(if (!isLocked) rotationAngle else 0f)
-                        )
-                    }
-
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = translateText(building.name),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isLocked) TextMuted else TextWhite,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            if (!isLocked) {
-                                Badge(containerColor = themeColor.copy(alpha = 0.2f), contentColor = themeColor) {
-                                    Text("Nív ${building.level}", modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
-                                }
-                                val currentMult = building.getMilestoneMultiplier()
-                                if (currentMult > 1.0) {
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Badge(containerColor = NeonCyan.copy(alpha = 0.15f), contentColor = NeonCyan) {
-                                        Text("x${formatAmount(currentMult)} Multi", modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), fontSize = 10.sp, fontWeight = FontWeight.Black)
-                                    }
-                                }
-                            }
-                        }
-                        Text(
-                            text = when {
-                                isLocked -> "Sistemas Desconectados"
-                                !building.isAutomated -> "Manual: toque em Produzir"
-                                else -> "Automática: ${translateText(building.resourceProduced)}"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextMuted,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-
-                if (isLocked) {
-                    val label = if (levelsGained > 1) "Iniciar +$levelsGained" else "Iniciar"
-                    Button(
-                        onClick = onUpgrade,
-                        enabled = currentCash >= cost,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = themeColor,
-                            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                Box(
+                    modifier = Modifier
+                        .padding(end = 12.dp)
+                        .size(38.dp)
+                        .background(
+                            if (isLocked) TextMuted.copy(alpha = 0.1f) else themeColor.copy(alpha = 0.15f),
+                            CircleShape
                         ),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.height(34.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp)
-                    ) {
-                        Text("$label (${formatCredits(cost)} C\$)", fontSize = 11.sp, fontWeight = FontWeight.Black)
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = buildingIcon,
+                        contentDescription = null,
+                        tint = if (isLocked) TextMuted else themeColor,
+                        modifier = Modifier.size(20.dp).rotate(if (!isLocked) rotationAngle else 0f)
+                    )
+                }
+                Text(
+                    text = translateText(building.name),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isLocked) TextMuted else TextWhite,
+                    maxLines = 2,
+                    modifier = Modifier.weight(1f).testTag("building_name_${building.id}")
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            if (isLocked) {
+                Button(
+                    onClick = onUpgrade,
+                    enabled = currentCash >= cost,
+                    colors = ButtonDefaults.buttonColors(containerColor = themeColor,
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                ) {
+                    Text("Iniciar${if (levelsGained > 1) " +$levelsGained" else ""} • ${formatCredits(cost)} C\$",
+                        fontWeight = FontWeight.Black)
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                    Badge(containerColor = themeColor.copy(alpha = 0.2f), contentColor = themeColor) {
+                        Text("Nív ${building.level}", modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
                     }
-                } else if (!building.isAutomated) {
-                    Badge(containerColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), contentColor = TextMuted) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)) {
-                            Icon(Icons.Filled.TouchApp, contentDescription = null, modifier = Modifier.size(10.dp), tint = TextMuted)
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text("Manual", fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                    val currentMult = building.getMilestoneMultiplier()
+                    if (currentMult > 1.0) {
+                        Badge(containerColor = NeonCyan.copy(alpha = 0.15f), contentColor = NeonCyan) {
+                            Text("x${formatAmount(currentMult)} Multi", modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                fontSize = 10.sp, fontWeight = FontWeight.Black)
                         }
                     }
-                } else {
-                    Badge(containerColor = SuccessGreen.copy(alpha = 0.15f), contentColor = SuccessGreen) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)) {
-                            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(10.dp), tint = SuccessGreen)
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text("Automação IA", fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                        }
+                    Badge(containerColor = if (building.isAutomated) SuccessGreen.copy(alpha = 0.15f)
+                        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
+                        contentColor = if (building.isAutomated) SuccessGreen else TextMuted) {
+                        Text(if (building.isAutomated) "Automação IA" else "Manual",
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                            fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
+            Text(
+                text = when {
+                    isLocked -> "Sistema desconectado"
+                    !building.isAutomated -> "Manual: toque em Produzir"
+                    else -> "Produz: ${translateText(building.resourceProduced)}"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted,
+                maxLines = 2
+            )
 
             if (!isLocked) {
                 Spacer(modifier = Modifier.height(12.dp))
