@@ -47,12 +47,10 @@ class GameRepository(private val db: GameDatabase) {
                 dao.getResearchersDirect().size == 6 && dao.getActiveMissionsDirect().isNotEmpty()) {
                 "Save incompleto. Os dados foram preservados; é necessário recuperar o backup."
             }
-            // A debug/demo or restored flag is not evidence of a paid subscription.
-            if (!com.example.BuildConfig.DEBUG &&
-                (state.isSubscribed || state.autoSellLicenseSource == "DEMO")) {
-                saveValidatedState(state.copy(isSubscribed = false,
-                    hasAutoSellLicense = if (state.autoSellLicenseSource == "DEMO") false else state.hasAutoSellLicense,
-                    autoSellLicenseSource = if (state.autoSellLicenseSource == "DEMO") "NONE" else state.autoSellLicenseSource))
+            // Old LEGACY flags cannot distinguish gem purchases from demo grants.
+            if (!com.example.BuildConfig.DEBUG) {
+                val safeState = withoutUnverifiedReleaseEntitlements(state)
+                if (safeState != state) saveValidatedState(safeState)
             }
             return@withTransaction
         }
@@ -741,10 +739,8 @@ class GameRepository(private val db: GameDatabase) {
         dao.clearCombatUnits()
         dao.clearResearchers()
         dao.clearMissions()
-        saveValidatedState(if (com.example.BuildConfig.DEBUG) state else state.copy(
-            isSubscribed = false,
-            hasAutoSellLicense = if (state.autoSellLicenseSource == "DEMO") false else state.hasAutoSellLicense,
-            autoSellLicenseSource = if (state.autoSellLicenseSource == "DEMO") "NONE" else state.autoSellLicenseSource))
+        saveValidatedState(if (com.example.BuildConfig.DEBUG) state else
+            withoutUnverifiedReleaseEntitlements(state, restoredFromBackup = true))
         dao.saveResources(resources)
         dao.saveBuildings(buildings)
         dao.saveCombatUnits(combatUnits)
