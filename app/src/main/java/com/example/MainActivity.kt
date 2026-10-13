@@ -422,22 +422,16 @@ fun TabContent(
     buildings: List<BusinessBuilding>,
     combatUnits: List<CombatUnit>
 ) {
-    AnimatedContent(
-        targetState = tab,
-        transitionSpec = {
-            fadeIn(animationSpec = tween(220)) togetherWith fadeOut(animationSpec = tween(150))
-        },
-        label = "TabTransition"
-    ) { currentTab ->
-        when (currentTab) {
-            0 -> IndustryTab(viewModel, state, resources, buildings)
-            1 -> CombatTab(viewModel, state, combatUnits)
-            2 -> MarketTab(viewModel, state, resources)
-            3 -> GuildTab(viewModel, state)
-            4 -> ProfileTab(viewModel, state)
-            5 -> AscensionTab(viewModel, state)
-            6 -> ShopAndEventTab(viewModel, state)
-        }
+    // Destinations can contain several live animations; composing both screens during
+    // a crossfade causes a visible pause on lower-end phones.
+    when (tab) {
+        0 -> IndustryTab(viewModel, state, resources, buildings)
+        1 -> CombatTab(viewModel, state, combatUnits)
+        2 -> MarketTab(viewModel, state, resources)
+        3 -> GuildTab(viewModel, state)
+        4 -> ProfileTab(viewModel, state)
+        5 -> AscensionTab(viewModel, state)
+        6 -> ShopAndEventTab(viewModel, state)
     }
 }
 
