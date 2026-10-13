@@ -3598,6 +3598,48 @@ fun AscensionTab(
 
     var prestigeError by remember { mutableStateOf("") }
     var prestigeSuccess by remember { mutableStateOf("") }
+    var showPrestigeConfirmation by remember { mutableStateOf(false) }
+    var prestigePending by remember { mutableStateOf(false) }
+
+    if (showPrestigeConfirmation) {
+        AlertDialog(
+            onDismissRequest = { if (!prestigePending) showPrestigeConfirmation = false },
+            title = { Text("Confirmar Ascensão Estelar") },
+            text = {
+                Text("Uma nova run começará na patente inicial, com as missões iniciais. " +
+                    "Créditos, estoques e fábricas serão reiniciados. " +
+                    "Gemas, ciência, pesquisadores e suas cartas, Núcleos de Nebulosa, " +
+                    "melhorias permanentes e recompensas já resgatadas permanecem.")
+            },
+            confirmButton = {
+                Button(
+                    enabled = !prestigePending,
+                    onClick = {
+                        prestigePending = true
+                        viewModel.performPrestigeAction(
+                            onSuccess = {
+                                prestigePending = false
+                                showPrestigeConfirmation = false
+                                prestigeSuccess = "Ascensão concluída! Patente e missões reiniciadas; seus ganhos permanentes foram mantidos."
+                                prestigeError = ""
+                            },
+                            onError = {
+                                prestigePending = false
+                                showPrestigeConfirmation = false
+                                prestigeError = it
+                                prestigeSuccess = ""
+                            }
+                        )
+                    }
+                ) { Text(if (prestigePending) "Ascendendo…" else "Confirmar Ascensão") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPrestigeConfirmation = false }, enabled = !prestigePending) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -3679,25 +3721,15 @@ fun AscensionTab(
                     NexusRewardRow(cores = "+$earnedCoresNow")
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Sua corporação alcançou os requisitos! Ao ascender agora, você reiniciará o progresso físico e receberá +$earnedCoresNow Núcleos de Nebulosa imediatamente.",
+                        "Sua corporação alcançou os requisitos! A Ascensão reinicia créditos, estoques, fábricas, patente e missões da run. Você recebe +$earnedCoresNow Núcleos de Nebulosa; gemas, ciência, pesquisadores e melhorias permanentes permanecem.",
                         fontSize = 12.sp,
                         color = SolarGold,
                         fontWeight = FontWeight.SemiBold
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Button(
-                        onClick = {
-                            viewModel.performPrestigeAction(
-                                onSuccess = {
-                                    prestigeSuccess = "Ascensão Estelar efetuada! Sua produção global agora é x${1.0 + (state.nebulaCores + earnedCoresNow) * 0.1} mais rápida!"
-                                    prestigeError = ""
-                                },
-                                onError = {
-                                    prestigeError = it
-                                    prestigeSuccess = ""
-                                }
-                            )
-                        },
+                        onClick = { showPrestigeConfirmation = true },
+                        enabled = !prestigePending,
                         colors = ButtonDefaults.buttonColors(containerColor = SolarGold, contentColor = Color.Black),
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp)

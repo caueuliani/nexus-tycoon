@@ -21,6 +21,18 @@ data class BackupSnapshot(
     val adReceipts: List<AdRewardReceipt> = emptyList()
 )
 
+internal fun resetRankForNewRun(state: GameState): GameState =
+    state.copy(playerRank = 1, completedRankMissions = 0)
+
+internal fun initialRankMissions(): List<ActiveMission> = listOf(
+    ActiveMission(1, "Possuir 5 Sol-Power Arrays", 1.0, 5.0, false, false,
+        "OWN_BUILDING", 1, "", 15, 50, "COMUM"),
+    ActiveMission(2, "Coletar 250 de Célula de Energia", 100.0, 250.0, false, false,
+        "COLLECT_RESOURCE", 0, "Energy Cell", 20, 80, "EPICA"),
+    ActiveMission(3, "Acumular 8.000 de Créditos (C$)", 5000.0, 8000.0, false, false,
+        "EARN_CASH", 0, "", 30, 150, "SUPREMA")
+)
+
 class GameRepository(private val db: GameDatabase) {
     private val dao = db.gameDao
 
@@ -202,11 +214,7 @@ class GameRepository(private val db: GameDatabase) {
             ))
 
             // Seed Active Missions
-            dao.saveActiveMissions(listOf(
-                ActiveMission(1, "Possuir 5 Sol-Power Arrays", 1.0, 5.0, false, false, "OWN_BUILDING", 1, "", 15, 50, "COMUM"),
-                ActiveMission(2, "Coletar 250 de Célula de Energia", 100.0, 250.0, false, false, "COLLECT_RESOURCE", 0, "Energy Cell", 20, 80, "EPICA"),
-                ActiveMission(3, "Acumular 8.000 de Créditos (C$)", 5000.0, 8000.0, false, false, "EARN_CASH", 0, "", 30, 150, "SUPREMA")
-            ))
+            dao.saveActiveMissions(initialRankMissions())
         }
     }
 
@@ -533,7 +541,10 @@ class GameRepository(private val db: GameDatabase) {
         if (state.cash < minCashRequired) return@withTransaction false
         
         val earnedCores = kotlin.math.floor(kotlin.math.sqrt(state.cash / minCashRequired)).toLong()
-        saveValidatedState(StellarLab.grant(state, earnedCores).copy(cash = 5000.0))
+        saveValidatedState(resetRankForNewRun(StellarLab.grant(state, earnedCores)).copy(
+            cash = 5000.0,
+            lastSavedTime = maxOf(state.lastSavedTime, System.currentTimeMillis())
+        ))
         
         dao.saveResources(listOf(
             ResourceInventory("Energy Cell", 100.0),
@@ -652,6 +663,11 @@ class GameRepository(private val db: GameDatabase) {
                 isAutoSelling = false
             )
         ))
+
+        // Mission rewards already collected remain in the state/researchers above.
+        // Replace every mission from the previous run, including partial progress.
+        dao.clearMissions()
+        dao.saveActiveMissions(initialRankMissions())
         
         return@withTransaction true
     }
