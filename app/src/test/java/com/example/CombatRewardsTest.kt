@@ -111,9 +111,13 @@ class CombatRewardsTest {
             db.gameDao.saveGameState(repo.getGameStateDirect()!!.copy(starGems=777,nebulaCores=100,availableCores=95,industrialEngineeringLevel=1,stage1CompletedCount=10,stage2CompletedCount=20,highestCombatStage=3))
             val saved=repo.exportBackup();db.close()
             android.database.sqlite.SQLiteDatabase.openDatabase(context.getDatabasePath(name).path,null,android.database.sqlite.SQLiteDatabase.OPEN_READWRITE).use {
-                it.execSQL("DROP TABLE combat_battles");it.version=10
+                it.execSQL("DROP TABLE combat_battles")
+                it.execSQL("DROP TABLE play_purchase_receipts")
+                it.execSQL("ALTER TABLE game_state DROP COLUMN autoSellLicenseSource")
+                it.version=10
             }
-            fun open()=Room.databaseBuilder(context,GameDatabase::class.java,name).addMigrations(GameDatabase.MIGRATION_10_11).build()
+            fun open()=Room.databaseBuilder(context,GameDatabase::class.java,name).addMigrations(
+                GameDatabase.MIGRATION_10_11, GameDatabase.MIGRATION_11_12, GameDatabase.MIGRATION_12_13).build()
             db=open();repo=GameRepository(db);assertEquals(saved,repo.exportBackup())
             val ticket=repo.beginCombat(1)!!;assertEquals(11,ticket.enemyLevel)
             db.close();db=open();repo=GameRepository(db)

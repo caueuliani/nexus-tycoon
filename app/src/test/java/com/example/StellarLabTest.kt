@@ -114,9 +114,13 @@ class StellarLabTest {
             android.database.sqlite.SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE).use { raw ->
                 listOf("availableCores", "industrialEngineeringLevel", "tacticalLogisticsLevel", "offlineReserveLevel", "claimedCoreEvents").forEach { raw.execSQL("ALTER TABLE game_state DROP COLUMN `$it`") }
                 raw.execSQL("DROP TABLE combat_battles")
+                raw.execSQL("DROP TABLE play_purchase_receipts")
+                raw.execSQL("ALTER TABLE game_state DROP COLUMN autoSellLicenseSource")
                 raw.version = 9
             }
-            fun reopen() = Room.databaseBuilder(context, GameDatabase::class.java, name).addMigrations(GameDatabase.MIGRATION_9_10, GameDatabase.MIGRATION_10_11).build()
+            fun reopen() = Room.databaseBuilder(context, GameDatabase::class.java, name).addMigrations(
+                GameDatabase.MIGRATION_9_10, GameDatabase.MIGRATION_10_11,
+                GameDatabase.MIGRATION_11_12, GameDatabase.MIGRATION_12_13).build()
             db = reopen(); repo = GameRepository(db)
             assertEquals(old.copy(state = old.state.copy(availableCores = 77)), repo.exportBackup())
             assertTrue(repo.buyStellarUpgrade(StellarUpgrade.OFFLINE, 0))
