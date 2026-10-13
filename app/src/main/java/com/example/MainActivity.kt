@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,6 +34,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -190,7 +193,7 @@ fun MainAppContent(viewModel: GameViewModel) {
     val combatUnits by viewModel.combatUnits.collectAsStateWithLifecycle()
     val offlineReport by viewModel.offlineEarnings.collectAsStateWithLifecycle()
 
-    var activeTab by remember { mutableStateOf(0) } // 0: Industry, 1: Combat, 2: Market, 3: Guild, 4: Profile, 5: Ascension, 6: Shop
+    var activeTab by rememberSaveable { mutableIntStateOf(0) } // 0: Industry, 1: Combat, 2: Market, 3: Guild, 4: Profile, 5: Ascension, 6: Shop
     val configuration = LocalConfiguration.current
     val isWideScreen = configuration.screenWidthDp >= 600
 
@@ -247,7 +250,7 @@ fun MainAppContent(viewModel: GameViewModel) {
                     ) {
                         Icon(
                             Icons.Filled.CorporateFare,
-                            contentDescription = "HQ Logo",
+                            contentDescription = "Logotipo da sede",
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
@@ -330,67 +333,67 @@ fun MainAppContent(viewModel: GameViewModel) {
         Scaffold(
             bottomBar = {
                 NavigationBar(
-                    modifier = Modifier
-                        .windowInsetsPadding(WindowInsets.navigationBars)
-                        .testTag("mobile_bottom_bar"),
+                    modifier = Modifier.testTag("mobile_bottom_bar"),
                     containerColor = MaterialTheme.colorScheme.surface
                 ) {
+                    Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
                     NavigationBarItem(
                         selected = activeTab == 0,
                         onClick = { activeTab = 0 },
                         icon = { Icon(Icons.Filled.Business, contentDescription = null) },
-                        label = { Text("Indústria", fontSize = 9.sp, maxLines = 1) },
-                        alwaysShowLabel = false,
-                        modifier = Modifier.testTag("nav_industry")
+                        label = { Text("Indústria", maxLines = 1) },
+                        alwaysShowLabel = true,
+                        modifier = Modifier.width(80.dp).testTag("nav_industry")
                     )
                     NavigationBarItem(
                         selected = activeTab == 1,
                         onClick = { activeTab = 1 },
                         icon = { Icon(Icons.Filled.Security, contentDescription = null) },
-                        label = { Text("Defesa", fontSize = 9.sp, maxLines = 1) },
-                        alwaysShowLabel = false,
-                        modifier = Modifier.testTag("nav_combat")
+                        label = { Text("Defesa", maxLines = 1) },
+                        alwaysShowLabel = true,
+                        modifier = Modifier.width(80.dp).testTag("nav_combat")
                     )
                     NavigationBarItem(
                         selected = activeTab == 2,
                         onClick = { activeTab = 2 },
                         icon = { Icon(Icons.Filled.TrendingUp, contentDescription = null) },
-                        label = { Text("Mercado", fontSize = 9.sp, maxLines = 1) },
-                        alwaysShowLabel = false,
-                        modifier = Modifier.testTag("nav_market")
+                        label = { Text("Mercado", maxLines = 1) },
+                        alwaysShowLabel = true,
+                        modifier = Modifier.width(80.dp).testTag("nav_market")
                     )
                     NavigationBarItem(
                         selected = activeTab == 3,
                         onClick = { activeTab = 3 },
                         icon = { Icon(Icons.Filled.Group, contentDescription = null) },
-                        label = { Text("Aliança", fontSize = 9.sp, maxLines = 1) },
-                        alwaysShowLabel = false,
-                        modifier = Modifier.testTag("nav_guild")
+                        label = { Text("Aliança", maxLines = 1) },
+                        alwaysShowLabel = true,
+                        modifier = Modifier.width(80.dp).testTag("nav_guild")
                     )
                     NavigationBarItem(
                         selected = activeTab == 4,
                         onClick = { activeTab = 4 },
                         icon = { Icon(Icons.Filled.AccountCircle, contentDescription = null) },
-                        label = { Text("Perfil", fontSize = 9.sp, maxLines = 1) },
-                        alwaysShowLabel = false,
-                        modifier = Modifier.testTag("nav_profile")
+                        label = { Text("Perfil", maxLines = 1) },
+                        alwaysShowLabel = true,
+                        modifier = Modifier.width(80.dp).testTag("nav_profile")
                     )
                     NavigationBarItem(
                         selected = activeTab == 5,
                         onClick = { activeTab = 5 },
                         icon = { Icon(Icons.Filled.Autorenew, contentDescription = null) },
-                        label = { Text("Ascensão", fontSize = 9.sp, maxLines = 1) },
-                        alwaysShowLabel = false,
-                        modifier = Modifier.testTag("nav_ascension")
+                        label = { Text("Ascensão", maxLines = 1) },
+                        alwaysShowLabel = true,
+                        modifier = Modifier.width(80.dp).testTag("nav_ascension")
                     )
                     NavigationBarItem(
                         selected = activeTab == 6,
                         onClick = { activeTab = 6 },
                         icon = { Icon(Icons.Filled.ShoppingBag, contentDescription = null) },
-                        label = { Text("Premium", fontSize = 9.sp, maxLines = 1) },
-                        alwaysShowLabel = false,
-                        modifier = Modifier.testTag("nav_premium")
+                        label = { Text("Premium", maxLines = 1) },
+                        alwaysShowLabel = true,
+                        modifier = Modifier.width(80.dp).testTag("nav_premium")
                     )
+                    }
                 }
             }
         ) { innerPadding ->
@@ -398,7 +401,6 @@ fun MainAppContent(viewModel: GameViewModel) {
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .windowInsetsPadding(WindowInsets.statusBars)
             ) {
                 TabContent(
                     tab = activeTab,
@@ -613,13 +615,12 @@ fun IndustryTab(
         }
 
         item {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
                     .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
                     text = "Evolução em lote:",
@@ -630,6 +631,7 @@ fun IndustryTab(
                 )
                 
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     listOf("x1", "x5", "x10", "MAX").forEach { mult ->
@@ -638,8 +640,10 @@ fun IndustryTab(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(if (isSelected) NeonCyan else Color.Black.copy(alpha = 0.4f))
-                                .clickable { viewModel.setUpgradeMultiplier(mult) }
-                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .semantics { contentDescription = "Comprar ${if (mult == "MAX") "máximo possível" else mult} níveis" }
+                                .clickable { viewModel.setUpgradeMultiplier(mult) },
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
@@ -976,7 +980,7 @@ fun ResearchersLabDialog(
                         )
                     }
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Filled.Close, contentDescription = "Close", tint = TextMuted)
+                        Icon(Icons.Filled.Close, contentDescription = "Fechar laboratório", tint = TextMuted)
                     }
                 }
 
@@ -1011,7 +1015,7 @@ fun ResearchersLabDialog(
                             letterSpacing = 1.sp
                         )
                         Text(
-                            text = "Tokens para Recrutamento & Upgrade",
+                            text = "Tokens para recrutamento e melhoria",
                             fontSize = 11.sp,
                             color = TextWhite.copy(alpha = 0.7f)
                         )
@@ -1902,7 +1906,7 @@ fun HeaderDashboardCard(
                         )
                     }
                     Box(modifier = Modifier.weight(1f)) {
-                        CurrencyBadge(icon = Icons.Filled.ChangeCircle, label = "${state.nebulaCores} Cores", text = "Star Cores")
+                        CurrencyBadge(icon = Icons.Filled.ChangeCircle, label = "${state.nebulaCores} Núcleos", text = "Núcleos de Nebulosa")
                     }
                 }
             }
@@ -2401,15 +2405,11 @@ fun BuildingProductionCard(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     val targetLevel = building.level + levelsGained
                     val nextRate = building.copy(level = targetLevel).getActualProductionRate() *
                         (if (building.isAutomated) totalMultiplier else energyFactor)
-                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
                         Text("PRÓXIMO • NÍV $targetLevel", color = themeColor,
                             fontSize = 10.sp, fontWeight = FontWeight.Black)
                         Text(if (building.isAutoSelling && hasAutoSellLicense)
@@ -2419,21 +2419,24 @@ fun BuildingProductionCard(
                     }
                     Button(
                         onClick = onUpgrade,
-                        enabled = currentCash >= cost,
+                        enabled = levelsGained > 0 && currentCash >= cost,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = themeColor,
                             disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
                         ),
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.height(40.dp)
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                     ) {
                         Text(
-                            text = if (levelsGained > 1) "Upgrade +$levelsGained: ${formatCredits(cost)} C\$" else "Upgrade: ${formatCredits(cost)} C\$",
-                            maxLines = 1,
-                            softWrap = false,
-                            fontSize = 11.sp,
+                            text = if (levelsGained > 1) "Melhorar +$levelsGained • ${formatCredits(cost)} C\$" else "Melhorar • ${formatCredits(cost)} C\$",
+                            maxLines = 2,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
+                    }
+                    if (currentCash < cost || levelsGained == 0) {
+                        Text("Créditos insuficientes para a melhoria selecionada", color = TextMuted,
+                            style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -2607,7 +2610,7 @@ fun CombatTab(
                                             modifier = Modifier.padding(horizontal = 4.dp)
                                         ) {
                                             Text(
-                                                text = "Ameaça Lvl ${completedCount + 1}",
+                                                text = "Ameaça nível ${completedCount + 1}",
                                                 style = MaterialTheme.typography.labelSmall,
                                                 fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -2615,7 +2618,7 @@ fun CombatTab(
                                             )
                                         }
                                     } else {
-                                        Icon(Icons.Filled.Lock, contentDescription = "Locked", tint = TextMuted, modifier = Modifier.size(14.dp))
+                                        Icon(Icons.Filled.Lock, contentDescription = "Setor bloqueado", tint = TextMuted, modifier = Modifier.size(14.dp))
                                     }
                                 }
                             }
@@ -2651,7 +2654,7 @@ fun CombatTab(
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Sala de Replay (Último Combate)", fontWeight = FontWeight.Bold)
+                        Text("Registro do último combate", fontWeight = FontWeight.Bold)
                         Text(
                             text = "${lastReplay!!.stageName} - ${if (lastReplay!!.victory) "Vitória" else "Retirada"} (${lastReplay!!.roundsCount} Turnos)",
                             fontSize = 12.sp,
@@ -2699,14 +2702,13 @@ fun CombatUnitItemCard(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp))
     ) {
-        Row(
+        Column(
             modifier = Modifier.fillMaxWidth().padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f).padding(end = 8.dp)
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Box(
                     modifier = Modifier
@@ -2742,11 +2744,10 @@ fun CombatUnitItemCard(
                         }
                     }
                     Text(
-                        text = "Classe: ${translateText(unit.type)} | HP: ${unit.health} | ATK: ${unit.attack}",
+                        text = "Classe: ${translateText(unit.type)} • Vida: ${unit.health} • Ataque: ${unit.attack}",
                         fontSize = 11.sp,
                         color = TextMuted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        maxLines = 2
                     )
                 }
             }
@@ -2755,11 +2756,15 @@ fun CombatUnitItemCard(
                 onClick = onUpgrade,
                 enabled = currentCash >= upgradeCost,
                 shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.height(34.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 contentPadding = PaddingValues(horizontal = 8.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
-                Text("Evoluir: ${formatAmount(upgradeCost)} C\$", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("Evoluir • ${formatAmount(upgradeCost)} C\$", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+            if (currentCash < upgradeCost) {
+                Text("Créditos insuficientes para evoluir", color = TextMuted,
+                    style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -3569,7 +3574,7 @@ fun ProfileTab(
                             if (isSel) {
                                 Icon(
                                     imageVector = Icons.Filled.CheckCircle,
-                                    contentDescription = "Selected",
+                                    contentDescription = "Selecionado",
                                     tint = colorAccent,
                                     modifier = Modifier.size(16.dp)
                                 )
@@ -3657,7 +3662,7 @@ fun AscensionTab(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "A Ascensão Estelar redefine suas indústrias, moedas e estoques em troca de raros Star Cores. " +
+                    text = "A Ascensão Estelar redefine suas indústrias, moedas e estoques em troca de Núcleos de Nebulosa. " +
                             "Cada Star Core adiciona +10% de bônus permanente à velocidade global de todas as fábricas! " +
                             "O requisito de C$ escalona em 1.6x a cada ascensão realizada.",
                     style = MaterialTheme.typography.bodyMedium,
@@ -3675,7 +3680,7 @@ fun AscensionTab(
                         Text("+$prestigeBonusPct% de Velocidade Global", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = SuccessGreen)
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text("Seus Star Cores:", fontSize = 11.sp, color = TextMuted)
+                        Text("Núcleos conquistados:", fontSize = 11.sp, color = TextMuted)
                         Text("${state.nebulaCores}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = SolarGold)
                     }
                 }
@@ -3707,7 +3712,7 @@ fun AscensionTab(
                     NexusRewardRow(cores = "+$earnedCoresNow")
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Sua corporação alcançou os requisitos! Ao ascender agora, você resetará o progresso físico e receberá +$earnedCoresNow Star Cores ✨ imediatamente.",
+                        "Sua corporação alcançou os requisitos! Ao ascender agora, você reiniciará o progresso físico e receberá +$earnedCoresNow Núcleos de Nebulosa imediatamente.",
                         fontSize = 12.sp,
                         color = SolarGold,
                         fontWeight = FontWeight.SemiBold
@@ -3732,7 +3737,7 @@ fun AscensionTab(
                     ) {
                         Icon(Icons.Filled.Autorenew, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Ascender e Coletar +$earnedCoresNow Star Cores", fontWeight = FontWeight.Black)
+                        Text("Ascender e coletar +$earnedCoresNow núcleos", fontWeight = FontWeight.Black)
                     }
                 } else {
                     val remaining = minCashRequired - currentCash
@@ -3788,6 +3793,8 @@ fun ShopAndEventTab(
     val purchaseStates = billing?.state?.collectAsStateWithLifecycle()?.value.orEmpty()
     val vipPurchase = purchaseStates[com.example.billing.PlayProduct.VIP]
     val licensePurchase = purchaseStates[com.example.billing.PlayProduct.AUTO_SELL]
+    var gemLicenseBusy by remember { mutableStateOf(false) }
+    var gemLicenseFeedback by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier
@@ -3820,7 +3827,7 @@ fun ShopAndEventTab(
                 }
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Complete objetivos sazonais para ganhar pacotes de Gemas e Star Cores raros exclusivíssimos!",
+                    text = "Complete objetivos sazonais para ganhar diamantes e Núcleos de Nebulosa!",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextMuted
                 )
@@ -3863,7 +3870,7 @@ fun ShopAndEventTab(
                                     }
                                 }
                             } else {
-                                Icon(Icons.Filled.Lock, contentDescription = "Locked", tint = TextMuted, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Filled.Lock, contentDescription = "Bloqueado", tint = TextMuted, modifier = Modifier.size(16.dp))
                             }
                         }
                     }
@@ -3975,18 +3982,31 @@ fun ShopAndEventTab(
 
                     Button(
                         onClick = {
+                            gemLicenseBusy = true
+                            gemLicenseFeedback = ""
                             viewModel.buyAutoSellLicenseWithGems(
-                                onSuccess = { },
-                                onError = { }
+                                onSuccess = {
+                                    gemLicenseBusy = false
+                                    gemLicenseFeedback = "Licença de auto-venda adquirida."
+                                },
+                                onError = {
+                                    gemLicenseBusy = false
+                                    gemLicenseFeedback = it
+                                }
                             )
                         },
+                        enabled = !gemLicenseBusy,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary, contentColor = MaterialTheme.colorScheme.onSecondary),
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Icon(Icons.Filled.Stars, contentDescription = null, modifier = Modifier.size(16.dp), tint = SolarGold)
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Desbloquear com 300 Gemas", fontWeight = FontWeight.Bold)
+                        Text(if (gemLicenseBusy) "Processando…" else "Desbloquear com 300 diamantes", fontWeight = FontWeight.Bold)
+                    }
+                    if (gemLicenseFeedback.isNotEmpty()) {
+                        Text(gemLicenseFeedback, color = TextWhite,
+                            style = MaterialTheme.typography.bodySmall)
                     }
                 } else {
                     Text(
@@ -4414,7 +4434,6 @@ fun GameTutorialDialog(
     onDismiss: () -> Unit
 ) {
     var currentSlide by remember { mutableStateOf(0) }
-    val totalSlides = 7
 
     val slides = listOf(
         TutorialSlide(
@@ -4425,19 +4444,19 @@ fun GameTutorialDialog(
         ),
         TutorialSlide(
             title = "Indústria & Fábricas 🏭",
-            description = "Ative e aprimore prédios sofisticados como Usinas de Energia, Mineração de Ferro e Chips Quânticos. Esqueça os Operários para aprimorar: agora, os upgrades de indústrias custam APENAS Créditos galácticos! Fique de olho no consumo de matéria-prima e atinja marcos de nível (10, 25, 50, etc.) que multiplicam a sua eficiência!",
+            description = "Ative fábricas e melhore seus níveis com créditos. A produção automática depende da automação; fábricas manuais precisam de toques. Observe o estoque e o consumo de insumos antes de expandir. Marcos de nível aumentam a eficiência.",
             icon = Icons.Filled.Business,
             tint = NeonCyan
         ),
         TutorialSlide(
             title = "Cientistas & Operários 👥",
-            description = "Recrute Cientistas renomados (como Karl Mark-IV) na aba de Pesquisa usando cartões obtidos de Cápsulas! Eles concedem bônus de produção astronômicos e reduzem drasticamente custos de indústrias. Seus Operários (Camaradas) agora acumulam de forma passiva constante, representando o prestígio e a força de trabalho definitiva de seu império interestelar!",
+            description = "Abra cápsulas para obter cartas de pesquisadores. Recrute e evolua pesquisadores com cartas e ciência; seus efeitos ajudam a indústria. Camaradas são gerados ao longo do tempo e representam sua força de trabalho.",
             icon = Icons.Filled.Group,
             tint = NeonCyan
         ),
         TutorialSlide(
             title = "Segurança & Patrulhas 🛡️",
-            description = "Defenda seus pipelines estrategicamente! Treine frotas de combate modernas (Vanguarda, Escudo, Especialista) no menu de Defesa. Conforme você ataca as patrulhas e limpa setores hostis com sucesso, o Nível de Ameaça do inimigo escala, aumentando a vida/dano deles de forma contínua, mas retribuindo com muito mais Star Gems, Tokens e Créditos!",
+            description = "Melhore suas unidades na Defesa e enfrente quatro setores de mineração hostil. Cada vitória aumenta a ameaça apenas naquele setor. Vitórias concedem créditos, diamantes e tokens; derrotas não reduzem a ameaça.",
             icon = Icons.Filled.Security,
             tint = NeonMagenta
         ),
@@ -4449,17 +4468,18 @@ fun GameTutorialDialog(
         ),
         TutorialSlide(
             title = "Ascensão Dimensional 🌀",
-            description = "Quando sua corporação atingir o ápice de volume financeiro, engaje o protocolo de Ascensão! Você reiniciará suas fábricas e créditos do zero, mas herdará valiosos Núcleos de Nebulosa. Cada núcleo concede um bônus multiplicativo de produção definitivo de +10% de forma empilhável e permanente!",
+            description = "Ao cumprir os requisitos, ascenda para conquistar Núcleos de Nebulosa. O total histórico mantém o bônus passivo de +10% de produção por núcleo, mesmo após gastar o saldo disponível. Use esse saldo no Laboratório Estelar para comprar melhorias permanentes de custos e limite offline.",
             icon = Icons.Filled.Autorenew,
             tint = NeonCyan
         ),
         TutorialSlide(
             title = "Salvamento e Backup 🛰️",
-            description = "Aproveite a sincronização em nuvem segura para nunca perder seu progresso corporativo estelar! Na aba Perfil, vincule sua Conta Google de forma instantânea para salvar suas riquezas automaticamente e compartilhar com seus amigos ou jogar em outros dispositivos.",
+            description = "O progresso é salvo neste aparelho. Na aba Perfil, conecte sua Conta Google e toque em Salvar na Nuvem para criar um backup real. Para recuperar, toque em Carregar Nuvem. Confirme o backup antes de desinstalar o jogo; a demonstração local não substitui o Firebase.",
             icon = Icons.Filled.CloudSync,
             tint = NeonMagenta
         )
     )
+    val totalSlides = slides.size
 
     val current = slides[currentSlide]
 
@@ -4501,6 +4521,8 @@ fun GameTutorialDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.55f).dp)
+                    .verticalScroll(rememberScrollState())
                     .padding(vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -4624,6 +4646,7 @@ fun ProfileDialog(
 
     AlertDialog(
         onDismissRequest = { if (!syncing) onDismiss() },
+        modifier = Modifier.imePadding(),
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.AccountCircle, contentDescription = null, tint = SolarGold, modifier = Modifier.size(28.dp))
