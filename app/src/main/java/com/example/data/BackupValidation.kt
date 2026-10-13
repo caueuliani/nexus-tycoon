@@ -24,7 +24,10 @@ object BackupValidation {
             finite(u.upgradeCost); finite(u.costMultiplier)
             require(u.upgradeCost > 0 && u.costMultiplier >= 1)
         }
-        require(researchers.map { it.id }.sorted() == (1..6).toList())
+        require(researchers.map { it.id }.distinct().size == researchers.size &&
+            researchers.map { it.id }.containsAll((1..6).toList()) &&
+            researchers.all { r -> ResearcherCatalog.cards.any { it.id == r.id &&
+                it.targetBuildingId == r.targetBuildingId && it.boostType == r.boostType } })
         researchers.forEach { r ->
             require(r.level >= 0 && r.level < Int.MAX_VALUE && r.cardsCollected >= 0 && r.cardsNeededToUpgrade > 0)
             require(r.targetBuildingId in 0..8 && r.rarity in setOf("COMMON", "RARE", "EPIC", "SUPREME"))

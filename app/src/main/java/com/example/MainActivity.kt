@@ -936,6 +936,7 @@ fun ResearchersLabDialog(
     var showShopAlert by remember { mutableStateOf(false) }
     var evolvedResearcherId by remember { mutableStateOf<Int?>(null) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
+    var selectedIndustry by remember { mutableIntStateOf(1) }
 
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -1220,7 +1221,24 @@ fun ResearchersLabDialog(
                         }
                     }
                 } else {
-                    scientists.forEach { r ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        (1..8).plus(0).forEach { industryId ->
+                            FilterChip(
+                                selected = selectedIndustry == industryId,
+                                onClick = { selectedIndustry = industryId },
+                                label = { Text(if (industryId == 0) "Globais" else "Indústria $industryId") }
+                            )
+                        }
+                    }
+                    Text(
+                        if (selectedIndustry == 0) "PESQUISADORES GLOBAIS" else
+                            "${com.example.data.ResearcherCatalog.industries[selectedIndustry - 1]} • Produção / Velocidade / Eficiência",
+                        color = NeonCyan, fontWeight = FontWeight.Black, fontSize = 11.sp
+                    )
+                    scientists.filter { it.targetBuildingId == selectedIndustry }.forEach { r ->
                         ScientistDossierCard(
                             r = r,
                             currentScience = state.science,

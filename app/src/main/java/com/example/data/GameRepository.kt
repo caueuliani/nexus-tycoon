@@ -54,9 +54,12 @@ class GameRepository(private val db: GameDatabase) {
         val state = dao.getGameStateDirect()
         val buildingsList = dao.getBuildingsDirect()
         if (state != null) {
+            val savedResearchers = dao.getResearchersDirect()
             check(buildingsList.map { it.id }.sorted() == (1..8).toList() &&
                 dao.getResourcesDirect().size == 8 && dao.getCombatUnitsDirect().size == 4 &&
-                dao.getResearchersDirect().size == 6) {
+                savedResearchers.map { it.id }.containsAll((1..6).toList()) &&
+                savedResearchers.map { it.id }.distinct().size == savedResearchers.size &&
+                savedResearchers.all { saved -> ResearcherCatalog.cards.any { it.id == saved.id } }) {
                 "Save incompleto. Os dados foram preservados; é necessário recuperar o backup."
             }
             // Old LEGACY flags cannot distinguish gem purchases from demo grants.
@@ -64,6 +67,9 @@ class GameRepository(private val db: GameDatabase) {
                 val safeState = withoutUnverifiedReleaseEntitlements(state)
                 if (safeState != state) saveValidatedState(safeState)
             }
+            dao.saveResearchers(ResearcherCatalog.withMissing(savedResearchers).filter { candidate ->
+                savedResearchers.none { it.id == candidate.id && it == candidate }
+            })
             dao.saveActiveMissions(missingMissions(state.playerRank, dao.getActiveMissionsDirect()))
             return@withTransaction
         }
@@ -205,14 +211,7 @@ class GameRepository(private val db: GameDatabase) {
             ))
 
             // Seed Researchers / Scientists
-            dao.saveResearchers(listOf(
-                ResearcherCard(1, "Elon Dusk-V", "Reduz o custo total de upgrades do Painel Solar em -15% por nível.", 1, 1, 2, 1, "COST_REDUCTION", "COMMON"),
-                ResearcherCard(2, "Marie Curie-ous", "Duplica a taxa de faturamento da Broca de Perfuração.", 0, 0, 2, 2, "PRODUCTION", "COMMON"),
-                ResearcherCard(3, "Ada Lovelace-space", "Aumenta a velocidade de refino do Fundidor de Liga em +50% por nível.", 0, 0, 3, 3, "SPEED", "RARE"),
-                ResearcherCard(4, "Albert Ein-stone", "Duplica a taxa de processamento do Montador Quântico.", 0, 0, 3, 4, "PRODUCTION", "RARE"),
-                ResearcherCard(5, "Karl Mark-IV", "Soma +1.0 Camarada/segundo de forma permanente na corporação.", 0, 0, 5, 0, "COMRADE_GEN", "EPIC"),
-                ResearcherCard(6, "Nebula Quantum Core", "Multiplica a produção global de TODAS as fábricas em +100% por nível.", 0, 0, 5, 0, "PRODUCTION", "SUPREME")
-            ))
+            dao.saveResearchers(ResearcherCatalog.cards)
 
             // Seed Active Missions
             dao.saveActiveMissions(initialRankMissions())
@@ -761,7 +760,7 @@ class GameRepository(private val db: GameDatabase) {
         dao.saveResources(resources)
         dao.saveBuildings(buildings)
         dao.saveCombatUnits(combatUnits)
-        dao.saveResearchers(researchers)
+        dao.saveResearchers(ResearcherCatalog.withMissing(researchers))
         dao.saveActiveMissions(missions)
         dao.saveActiveMissions(missingMissions(state.playerRank, dao.getActiveMissionsDirect()))
         check(dao.getBuildingsDirect() == buildings.sortedBy { it.id }) {

@@ -110,34 +110,14 @@ suspend fun GameRepository.buyAndOpenCapsuleWithGems(type: String, onSuccess: (L
             else -> 1
         }
 
-        val obtainedCards = mutableListOf<String>()
-        val updatedScientists = scientists.map { s ->
-            var gained = 0
-            for (i in 0 until cardsNumber) {
-                val roll = Random.nextDouble()
-                val matchChance = when (s.rarity) {
-                    "COMMON" -> 0.40
-                    "RARE" -> 0.20
-                    "EPIC" -> 0.10
-                    "SUPREME" -> if (type == "SUPREMA") 0.15 else 0.03
-                    else -> 0.15
-                }
-                if (roll < matchChance) gained++
-            }
-
-            if (gained > 0) {
-                obtainedCards.add("${s.name} (x$gained)")
-                s.copy(cardsCollected = Math.addExact(s.cardsCollected, gained))
-            } else s
-        }
-
-        saveResearchers(updatedScientists)
+        val grant = ResearcherRewards.roll(scientists, cardsNumber, type)
+        saveResearchers(grant.researchers)
         saveGameState(current.copy(
         starGems = current.starGems - cost,
         science = Math.addExact(current.science, scienceGain.toLong())
         ))
 
-        notifications.add { onSuccess(scienceGain, obtainedCards) }
+        notifications.add { onSuccess(scienceGain, grant.labels) }
     }
     notifications.forEach { it() }
 }
@@ -199,28 +179,8 @@ suspend fun GameRepository.claimMissionReward(missionId: Int, onSuccess: (Long, 
             else -> 1
         }
 
-        val obtainedCards = mutableListOf<String>()
-        val updatedScientists = scientists.map { s ->
-            var gained = 0
-            for (i in 0 until cardsNumber) {
-                val roll = Random.nextDouble()
-                val matchChance = when (s.rarity) {
-                    "COMMON" -> 0.45
-                    "RARE" -> 0.22
-                    "EPIC" -> 0.12
-                    "SUPREME" -> 0.05
-                    else -> 0.15
-                }
-                if (roll < matchChance) gained++
-            }
-
-            if (gained > 0) {
-                obtainedCards.add("${s.name} (x$gained)")
-                s.copy(cardsCollected = Math.addExact(s.cardsCollected, gained))
-            } else s
-        }
-
-        saveResearchers(updatedScientists)
+        val grant = ResearcherRewards.roll(scientists, cardsNumber, null)
+        saveResearchers(grant.researchers)
 
         val nextCompleted = (freshState.completedRankMissions + 1).coerceAtMost(3)
         saveGameState(freshState.copy(
@@ -230,7 +190,7 @@ suspend fun GameRepository.claimMissionReward(missionId: Int, onSuccess: (Long, 
         ))
         fillMissionSlots(freshState.playerRank)
 
-        notifications.add { onSuccess(gemsReward, scienceReward, m.rewardCapsuleType, obtainedCards) }
+        notifications.add { onSuccess(gemsReward, scienceReward, m.rewardCapsuleType, grant.labels) }
     }
     notifications.forEach { it() }
 }
@@ -248,13 +208,8 @@ suspend fun GameRepository.rankUpPlayer(onSuccess: (Int, Long, List<String>) -> 
         val rewardScienceGain = (100 * nextRank).toLong()
         val rewardGemsGain = (50 + nextRank * 10).toLong()
 
-        val obtainedCards = mutableListOf<String>()
-        val updatedScientists = scientists.map { s ->
-            val gained = Random.nextInt(1, 3)
-            obtainedCards.add("${s.name} (x$gained)")
-            s.copy(cardsCollected = Math.addExact(s.cardsCollected, gained))
-        }
-        saveResearchers(updatedScientists)
+        val grant = ResearcherRewards.promotion(scientists)
+        saveResearchers(grant.researchers)
 
         saveGameState(freshState.copy(
         playerRank = nextRank,
@@ -263,7 +218,7 @@ suspend fun GameRepository.rankUpPlayer(onSuccess: (Int, Long, List<String>) -> 
         science = Math.addExact(freshState.science, rewardScienceGain.toLong())
         ))
 
-        notifications.add { onSuccess(nextRank, rewardScienceGain, obtainedCards) }
+        notifications.add { onSuccess(nextRank, rewardScienceGain, grant.labels) }
     }
     notifications.forEach { it() }
 }

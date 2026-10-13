@@ -67,6 +67,14 @@ internal object ResearcherStyle {
         else -> R.drawable.img_scientist_card
     }
 
+    fun artwork(researcher: ResearcherCard): Int = when {
+        researcher.id <= 6 -> artwork(researcher.id)
+        researcher.boostType == "COST_REDUCTION" -> R.drawable.img_sci_elon
+        researcher.boostType == "SPEED" -> R.drawable.img_sci_ada
+        researcher.targetBuildingId % 2 == 0 -> R.drawable.img_sci_curie
+        else -> R.drawable.img_sci_albert
+    }
+
     fun frame(color: Color) = NexusVisuals.frame(color)
 }
 
@@ -126,7 +134,7 @@ private fun NexusRewardLine(label: String, value: String, accent: Color,
 internal fun ResearcherPortrait(researcher: ResearcherCard, size: androidx.compose.ui.unit.Dp) {
     val tint = ResearcherStyle.color(researcher.rarity)
     SafeImage(
-        resId = ResearcherStyle.artwork(researcher.id),
+        resId = ResearcherStyle.artwork(researcher),
         contentDescription = "Retrato de ${researcher.name}",
         modifier = Modifier.size(size).clip(RoundedCornerShape(12.dp))
             .border(2.dp, ResearcherStyle.frame(tint), RoundedCornerShape(12.dp)),
