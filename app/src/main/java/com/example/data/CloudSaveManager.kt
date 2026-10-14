@@ -242,7 +242,7 @@ class CloudSaveManager(private val context: Context) {
 
             // Map data structure
             return mapOf(
-                "backupVersion" to 5,
+                "backupVersion" to 6,
                 "adReceipts" to snapshot.adReceipts.map { mapOf("token" to it.token, "rewardedAt" to it.rewardedAt) },
                 "companyName" to state.companyName,
                 "cash" to state.cash,
@@ -283,7 +283,11 @@ class CloudSaveManager(private val context: Context) {
                     "baseCost" to b.baseCost, "costMultiplier" to b.costMultiplier,
                     "productionRatePerLevel" to b.productionRatePerLevel, "resourceProduced" to b.resourceProduced,
                     "inputResource" to b.inputResource, "inputAmountPerSec" to b.inputAmountPerSec,
-                    "isAutoSelling" to b.isAutoSelling
+                    "isAutoSelling" to b.isAutoSelling,
+                    "cycleStartedAtMs" to b.cycleStartedAtMs,
+                    "cycleEndsAtMs" to b.cycleEndsAtMs,
+                    "cycleOutput" to b.cycleOutput,
+                    "cycleSalePrice" to b.cycleSalePrice
                 ) },
                 "researchers" to snapshot.researchers.map { r -> mapOf(
                     "id" to r.id, "name" to r.name, "description" to r.description,
@@ -312,7 +316,7 @@ class CloudSaveManager(private val context: Context) {
     suspend fun restoreFromPayload(repository: GameRepository, payload: Map<String, Any>) {
         BackupValidation.payload(payload)
         val version = (payload["backupVersion"] as Number).toInt()
-        require(version in 2..5) {
+        require(version in 2..6) {
             "Backup antigo ou incompatível. Gere um novo backup no dispositivo de origem; o progresso local foi preservado."
         }
         require(listOf("resources", "buildings", "combatUnits", "researchers", "missions").all {
@@ -384,7 +388,11 @@ class CloudSaveManager(private val context: Context) {
                 resourceProduced = it["resourceProduced"] as? String ?: "Energy Cell",
                 inputResource = it["inputResource"] as? String,
                 inputAmountPerSec = (it["inputAmountPerSec"] as? Number)?.toDouble() ?: 0.0,
-                isAutoSelling = it["isAutoSelling"] as? Boolean ?: false
+                isAutoSelling = it["isAutoSelling"] as? Boolean ?: false,
+                cycleStartedAtMs = if (version >= 6) (it["cycleStartedAtMs"] as Number).toLong() else 0,
+                cycleEndsAtMs = if (version >= 6) (it["cycleEndsAtMs"] as Number).toLong() else 0,
+                cycleOutput = if (version >= 6) (it["cycleOutput"] as Number).toDouble() else 0.0,
+                cycleSalePrice = if (version >= 6) (it["cycleSalePrice"] as Number).toDouble() else 0.0
             )
         }
 

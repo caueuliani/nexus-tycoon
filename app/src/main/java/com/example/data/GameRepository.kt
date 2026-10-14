@@ -21,6 +21,9 @@ data class BackupSnapshot(
     val adReceipts: List<AdRewardReceipt> = emptyList()
 )
 
+data class ProductionAdvance(val cash: Double, val produced: Map<Int, Double>, val resources: List<ResourceInventory>,
+    val comrades: Double, val comradesRate: Double)
+
 internal fun resetRankForNewRun(state: GameState): GameState =
     state.copy(playerRank = 1, completedRankMissions = 0)
 
@@ -218,44 +221,52 @@ class GameRepository(private val db: GameDatabase) {
         }
     }
 
-    // Process Offline Income up to 12h
+    internal suspend fun advanceProductionInTransaction(nowMs: Long, prices: Map<String, Double>): ProductionAdvance? {
+        val state = dao.getGameStateDirect() ?: return null
+        if (nowMs < state.lastSavedTime) return null // clock moved backwards
+        val fromMs = maxOf(state.lastSavedTime, nowMs - StellarLab.offlineHours(state) * 3_600_000L)
+        val oldBuildings = dao.getBuildingsDirect()
+        val oldResources = dao.getResourcesDirect()
+        val tick = ProductionCycles.advance(state, oldBuildings, oldResources,
+            dao.getResearchersDirect(), fromMs, nowMs, prices)
+        require((state.cash + tick.cash).isFinite() && (state.comrades + tick.comrades).isFinite())
+        if (tick.buildings != oldBuildings) dao.saveBuildings(tick.buildings)
+        if (tick.resources != oldResources) dao.saveResources(tick.resources)
+        saveValidatedState(state.copy(cash = state.cash + tick.cash,
+            comrades = state.comrades + tick.comrades, comradesPerSec = tick.comradesRate,
+            lastSavedTime = nowMs))
+        return ProductionAdvance(tick.cash, tick.produced, tick.resources, tick.comrades, tick.comradesRate)
+    }
+
+    suspend fun advanceProduction(nowMs: Long, prices: Map<String, Double>): ProductionAdvance? = db.withTransaction {
+        advanceProductionInTransaction(nowMs, prices)
+    }
+
+    suspend fun startManualCycle(buildingId: Int, nowMs: Long, prices: Map<String, Double>): Boolean = db.withTransaction {
+        advanceProductionInTransaction(nowMs, prices)
+        val state = dao.getGameStateDirect() ?: return@withTransaction false
+        val building = dao.getBuildingsDirect().find { it.id == buildingId } ?: return@withTransaction false
+        if (building.level <= 0 || building.isAutomated || building.cycleEndsAtMs > 0) return@withTransaction false
+        val stock = dao.getResourcesDirect().associate { it.name to it.quantity }.toMutableMap()
+        val started = ProductionCycles.start(state, building, dao.getResearchersDirect(), stock, nowMs, prices)
+            ?: return@withTransaction false
+        dao.updateBuilding(started)
+        dao.saveResources(stock.map { ResourceInventory(it.key, it.value) })
+        true
+    }
+
+    // Process Offline Income up to the existing offline limit.
     suspend fun processOfflineDifference(curTime: Long = System.currentTimeMillis()): OfflineEarnings? = db.withTransaction {
         val state = dao.getGameStateDirect() ?: return@withTransaction null
         require(curTime >= 0)
         if (curTime <= state.lastSavedTime) return@withTransaction null
-        val diffMs = curTime - state.lastSavedTime
-        if (diffMs < 10000) { // minimum 10 seconds empty
-            saveValidatedState(state.copy(lastSavedTime = curTime))
-            return@withTransaction null
-        }
-
-        val maxSeconds = StellarLab.offlineHours(state) * 3600L
-        val seconds = (diffMs / 1000).coerceAtMost(maxSeconds) // max 12h para VIP, 8h para padrão
-        val buildings = dao.getBuildingsDirect()
-        val researchers = dao.getResearchersDirect()
         val start = dao.getResourcesDirect()
-        var resources = start
-        var cash = 0.0
-        var comrades = 0.0
-        var rate = state.comradesPerSec
-        // Bounded to 16 hours. Replaying the same one-second rule preserves input and
-        // surplus autosell semantics even when a downstream factory runs out of stock.
-        repeat(seconds.toInt()) {
-            if (it % 256 == 0) kotlinx.coroutines.currentCoroutineContext().ensureActive()
-            val tick = ProductionEngine.step(state, buildings, resources, researchers)
-            resources = tick.resources
-            cash += tick.cash
-            comrades += tick.comrades
-            rate = tick.comrades
-        }
-        require((state.cash + cash).isFinite() && (state.comrades + comrades).isFinite())
-        dao.saveResources(resources)
-        saveValidatedState(state.copy(cash = state.cash + cash, comrades = state.comrades + comrades,
-            comradesPerSec = rate, lastSavedTime = curTime))
+        val tick = advanceProductionInTransaction(curTime, ProductionEngine.basePrices)
+            ?: return@withTransaction null
         val initial = start.associate { it.name to it.quantity }
-        val net = resources.associate { it.name to (it.quantity - initial.getValue(it.name)).coerceAtLeast(0.0) }
+        val net = tick.resources.associate { it.name to (it.quantity - initial.getValue(it.name)).coerceAtLeast(0.0) }
             .filterValues { it > 0 }
-        OfflineEarnings(seconds, net, cash)
+        OfflineEarnings(((curTime - state.lastSavedTime) / 1000).coerceAtMost(StellarLab.offlineHours(state) * 3600L), net, tick.cash)
     }
 
     // Full writes are only for fresh snapshots read inside a progress/production transaction.
@@ -546,6 +557,7 @@ class GameRepository(private val db: GameDatabase) {
             lastSavedTime = maxOf(state.lastSavedTime, System.currentTimeMillis())
         ))
         
+        dao.clearProductionCycles()
         dao.saveResources(listOf(
             ResourceInventory("Energy Cell", 100.0),
             ResourceInventory("Iron Ore", 0.0),
@@ -794,7 +806,7 @@ class GameRepository(private val db: GameDatabase) {
                     context.applicationContext, GameDatabase::class.java, "nexus_tycoon.db"
                 ).addMigrations(GameDatabase.MIGRATION_8_9, GameDatabase.MIGRATION_9_10,
                     GameDatabase.MIGRATION_10_11, GameDatabase.MIGRATION_11_12,
-                    GameDatabase.MIGRATION_12_13).build()
+                    GameDatabase.MIGRATION_12_13, GameDatabase.MIGRATION_13_14).build()
                 val repo = GameRepository(db)
                 INSTANCE = repo
                 repo

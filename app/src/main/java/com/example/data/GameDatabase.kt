@@ -104,7 +104,11 @@ data class BusinessBuilding(
     val resourceProduced: String,
     val inputResource: String? = null,
     val inputAmountPerSec: Double = 0.0,
-    val isAutoSelling: Boolean = false
+    val isAutoSelling: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val cycleStartedAtMs: Long = 0,
+    @ColumnInfo(defaultValue = "0") val cycleEndsAtMs: Long = 0,
+    @ColumnInfo(defaultValue = "0") val cycleOutput: Double = 0.0,
+    @ColumnInfo(defaultValue = "0") val cycleSalePrice: Double = 0.0
 ) {
     fun getMilestoneMultiplier(): Double {
         if (level <= 0) return 1.0
@@ -245,6 +249,9 @@ interface GameDao {
     @Update
     suspend fun updateBuilding(building: BusinessBuilding)
 
+    @Query("UPDATE buildings SET cycleStartedAtMs = 0, cycleEndsAtMs = 0, cycleOutput = 0, cycleSalePrice = 0")
+    suspend fun clearProductionCycles()
+
     // Combat Units
     @Query("SELECT * FROM combat_units ORDER BY id ASC")
     fun getCombatUnitsFlow(): Flow<List<CombatUnit>>
@@ -297,11 +304,21 @@ interface GameDao {
         AdRewardReceipt::class,
         PlayPurchaseReceipt::class
     ],
-    version = 13,
+    version = 14,
     exportSchema = false
 )
 abstract class GameDatabase : RoomDatabase() {
     companion object {
+        val MIGRATION_13_14 = object : androidx.room.migration.Migration(13, 14) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE buildings ADD COLUMN cycleStartedAtMs INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE buildings ADD COLUMN cycleEndsAtMs INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE buildings ADD COLUMN cycleOutput REAL NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE buildings ADD COLUMN cycleSalePrice REAL NOT NULL DEFAULT 0")
+                // Old one-second saves have no cycle history; do not pay elapsed time twice.
+                db.execSQL("UPDATE game_state SET lastSavedTime = ${System.currentTimeMillis()}")
+            }
+        }
         val MIGRATION_12_13 = object : androidx.room.migration.Migration(12, 13) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE game_state ADD COLUMN autoSellLicenseSource TEXT NOT NULL DEFAULT 'NONE'")

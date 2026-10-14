@@ -53,6 +53,9 @@ import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.pow
 
+private fun formatCycleSeconds(milliseconds: Long): String =
+    String.format(Locale("pt", "BR"), "%.1f s", milliseconds.coerceAtLeast(0L) / 1000.0)
+
 class MainActivity : ComponentActivity() {
     val rewardedAds by lazy { com.example.ads.RewardedAdsController(this) }
     val playBilling by lazy { com.example.billing.PlayBillingController(this) }
@@ -450,8 +453,15 @@ fun IndustryTab(
 
     val activeMissions by viewModel.activeMissions.collectAsStateWithLifecycle()
     val scientists by viewModel.researchers.collectAsStateWithLifecycle()
-    val prices by viewModel.marketPrices.collectAsStateWithLifecycle()
     val currentMultiplier by viewModel.upgradeMultiplier.collectAsStateWithLifecycle()
+    val manualFeedback by viewModel.manualFeedback.collectAsStateWithLifecycle()
+    var productionClockMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(100)
+            productionClockMs = System.currentTimeMillis()
+        }
+    }
 
     if (showProfileDialog) {
         ProfileDialog(viewModel = viewModel, onDismiss = { showProfileDialog = false })
@@ -658,17 +668,17 @@ fun IndustryTab(
             }
         } else {
             items(buildings) { building ->
-                val currentPrice = prices[building.resourceProduced] ?: 1.0
                 BuildingProductionCard(
                     building = building,
                     inventory = resources,
                     currentCash = state.cash,
                     currentGems = state.starGems,
-                    marketPrice = currentPrice,
                     hasAutoSellLicense = state.hasAutoSellLicense,
                     upgradeMultiplier = currentMultiplier,
                     scientists = scientists,
                     gameState = state,
+                    productionClockMs = productionClockMs,
+                    manualFeedback = manualFeedback[building.id].orEmpty(),
                     onUpgrade = { viewModel.upgradeBuilding(building.id) },
                     onAutomate = { viewModel.automateBuildingWithGems(building.id) },
                     onProduce = { viewModel.produceManual(building.id) },
@@ -2007,11 +2017,12 @@ fun BuildingProductionCard(
     inventory: List<ResourceInventory>,
     currentCash: Double,
     currentGems: Long,
-    marketPrice: Double,
     hasAutoSellLicense: Boolean,
     upgradeMultiplier: String,
     scientists: List<ResearcherCard>,
     gameState: GameState? = null,
+    productionClockMs: Long = System.currentTimeMillis(),
+    manualFeedback: String = "",
     onUpgrade: () -> Unit,
     onAutomate: () -> Unit,
     onProduce: () -> Unit,
@@ -2020,31 +2031,17 @@ fun BuildingProductionCard(
     val discountedBaseCost = com.example.data.EconomyCosts.buildingBase(building, scientists, gameState ?: GameState())
     val (levelsGained, cost) = calculateMultiUpgrade(discountedBaseCost, building.costMultiplier, building.level, currentCash, upgradeMultiplier)
 
-    // --- Scientist/Researcher multipliers ---
-    // a) Global supreme boost (ID 6)
-    val globalSupremeCard = scientists.find { it.id == 6 }
-    val globalSupremeMulti = 1.0 + (if (globalSupremeCard != null && globalSupremeCard.level > 0) globalSupremeCard.getBoostValue() else 0.0)
-    
-    // b) Local production boost (target ID matches building)
-    val localProdCard = scientists.find { it.targetBuildingId == building.id && it.boostType == "PRODUCTION" }
-    val localProdMulti = 1.0 + (if (localProdCard != null && localProdCard.level > 0) localProdCard.getBoostValue() else 0.0)
-    
-    // c) Local speed boost (speeding up turns = more output)
-    val localSpeedCard = scientists.find { it.targetBuildingId == building.id && it.boostType == "SPEED" }
-    val localSpeedMulti = 1.0 + (if (localSpeedCard != null && localSpeedCard.level > 0) localSpeedCard.getBoostValue() else 0.0)
-
-    val scienceProdMulti = 1.0 + ((gameState?.scienceProdLevel ?: 0) * 0.15)
-    val prestigeBonus = 1.0 + ((gameState?.nebulaCores ?: 0L) * 0.10)
-    val energyFactor = (if (gameState?.isSubscribed == true) 1.5 else 1.0) * prestigeBonus
-    
-    val totalMultiplier = energyFactor * scienceProdMulti * globalSupremeMulti * localProdMulti * localSpeedMulti
-    val runsRate = building.getActualProductionRate() *
-        (if (building.isAutomated) totalMultiplier else energyFactor)
-    val inputRequired = building.inputAmountPerSec * building.level
+    val plan = com.example.data.ProductionCycles.plan(gameState ?: GameState(), building, scientists)
+    val runsRate = plan.averagePerSecond
+    val inputRequired = plan.input
     val inputStock = inventory.firstOrNull { it.name == building.inputResource }?.quantity ?: 0.0
     val hasFullInput = building.inputResource == null || inputStock >= inputRequired
-    val productionUnit = if (building.isAutomated) "/s" else "/toque"
+    val productionUnit = "/s"
     val isLocked = building.level == 0
+    val cycleBusy = building.cycleEndsAtMs > 0L
+    val remainingMs = if (cycleBusy) (building.cycleEndsAtMs - productionClockMs).coerceAtLeast(0L) else 0L
+    val cycleDurationMs = if (cycleBusy) building.cycleEndsAtMs - building.cycleStartedAtMs else plan.durationMs
+    val cycleProgress = if (cycleBusy) (1f - remainingMs.toFloat() / cycleDurationMs).coerceIn(0f, 1f) else 0f
 
     // High-fidelity animation loop for spinning/pulsating building gears
     val infiniteRotation = rememberInfiniteTransition(label = "BuildingIconRotation")
@@ -2171,51 +2168,28 @@ fun BuildingProductionCard(
             if (!isLocked) {
                 Spacer(modifier = Modifier.height(12.dp))
                 NexusMetric(
-                    label = "Produção atual",
-                    value = if (building.isAutoSelling && hasAutoSellLicense)
-                        "+${formatCredits(runsRate * marketPrice)} C\$$productionUnit"
-                    else "+${formatAmount(runsRate)} $productionUnit",
-                    accent = if (building.isAutoSelling && hasAutoSellLicense) SuccessGreen else themeColor,
+                    label = "Capacidade média",
+                    value = "+${formatAmount(runsRate)} $productionUnit",
+                    accent = themeColor,
                     modifier = Modifier.fillMaxWidth()
                 )
                 
-                // Live production progress display
-                val transition = rememberInfiniteTransition(label = "productionLoader")
-                val animatedProgress by transition.animateFloat(
-                    initialValue = 0f,
-                    targetValue = 1f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(2500, easing = LinearEasing),
-                        repeatMode = RepeatMode.Restart
-                    ),
-                    label = "loader"
-                )
-
                 Column {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = if (building.isAutoSelling && hasAutoSellLicense) {
-                                "Capacidade: +${formatCredits(runsRate * marketPrice)} C\$$productionUnit (Auto-venda)"
-                            } else {
-                                "Capacidade: +${formatAmount(runsRate)}$productionUnit de ${translateText(building.resourceProduced)}"
-                            },
+                            text = "Por ciclo: +${formatAmount(if (cycleBusy) building.cycleOutput else plan.output)} de ${translateText(building.resourceProduced)}",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (building.isAutoSelling && hasAutoSellLicense) SuccessGreen else themeColor,
+                            color = themeColor,
                             modifier = Modifier.weight(1f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
                     if (building.inputResource != null) {
-                        Text(
-                            text = "Consumo: ${formatAmount(inputRequired)}$productionUnit de ${translateText(building.inputResource)}",
-                            fontSize = 11.sp,
-                            color = TextMuted
-                        )
                         Text(
                             text = "Estoque: ${formatAmount(inputStock)}" +
                                 if (hasFullInput) " • insumo disponível" else " • insuficiente para um ciclo completo",
@@ -2228,7 +2202,7 @@ fun BuildingProductionCard(
                     
                     // Production progression gauge (Linear indicator styled)
                     LinearProgressIndicator(
-                        progress = if (building.isAutomated) animatedProgress else 1f,
+                        progress = cycleProgress,
                         color = themeColor,
                         trackColor = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier
@@ -2236,6 +2210,14 @@ fun BuildingProductionCard(
                             .height(6.dp)
                             .clip(RoundedCornerShape(3.dp))
                     )
+                    Text(
+                        if (cycleBusy) "Ciclo: ${formatCycleSeconds(remainingMs)} restantes"
+                        else "Ciclo: ${formatCycleSeconds(plan.durationMs)} • aguardando início",
+                        fontSize = 11.sp, color = TextMuted
+                    )
+                    if (manualFeedback.isNotBlank() && !building.isAutomated) {
+                        Text(manualFeedback, fontSize = 11.sp, color = AlertRed)
+                    }
 
                     Spacer(modifier = Modifier.height(10.dp))
 
@@ -2294,14 +2276,19 @@ fun BuildingProductionCard(
                     ) {
                         Button(
                             onClick = onProduce,
-                            colors = ButtonDefaults.buttonColors(containerColor = themeColor),
+                            enabled = !cycleBusy,
+                            colors = ButtonDefaults.buttonColors(containerColor = themeColor,
+                                disabledContainerColor = themeColor.copy(alpha = 0.35f)),
                             shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f).height(36.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                             contentPadding = PaddingValues(0.dp)
                         ) {
                             Icon(Icons.Filled.TouchApp, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Produzir", fontSize = 11.sp, fontWeight = FontWeight.Black)
+                            Text(when {
+                                cycleBusy -> "Produzindo"
+                                else -> "Produzir"
+                            }, fontSize = 11.sp, fontWeight = FontWeight.Black)
                         }
 
                         Button(
@@ -2391,17 +2378,6 @@ fun BuildingProductionCard(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val targetLevel = building.level + levelsGained
-                    val nextRate = building.copy(level = targetLevel).getActualProductionRate() *
-                        (if (building.isAutomated) totalMultiplier else energyFactor)
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Text("PRÓXIMO • NÍV $targetLevel", color = themeColor,
-                            fontSize = 10.sp, fontWeight = FontWeight.Black)
-                        Text(if (building.isAutoSelling && hasAutoSellLicense)
-                            "+${formatCredits(nextRate * marketPrice)} C\$$productionUnit"
-                            else "+${formatAmount(nextRate)} $productionUnit", color = TextWhite,
-                            fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    }
                     Button(
                         onClick = onUpgrade,
                         enabled = levelsGained > 0 && currentCash >= cost,

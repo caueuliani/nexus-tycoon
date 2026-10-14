@@ -16,6 +16,11 @@ object BackupValidation {
             finite(b.baseCost); finite(b.costMultiplier); finite(b.productionRatePerLevel); finite(b.inputAmountPerSec)
             require(b.baseCost > 0 && b.costMultiplier >= 1)
             finite(b.getActualProductionRate())
+            require(b.cycleStartedAtMs >= 0 && b.cycleEndsAtMs >= 0)
+            finite(b.cycleOutput); finite(b.cycleSalePrice)
+            require((b.cycleEndsAtMs == 0L && b.cycleStartedAtMs == 0L && b.cycleOutput == 0.0 && b.cycleSalePrice == 0.0) ||
+                (b.level > 0 && b.cycleStartedAtMs > 0L && b.cycleEndsAtMs > b.cycleStartedAtMs &&
+                    b.cycleEndsAtMs - b.cycleStartedAtMs in 500L..15_000L && b.cycleOutput > 0.0))
         }
         require(units.map { it.id }.sorted() == (1..4).toList())
         units.forEach { u ->
@@ -96,6 +101,8 @@ object BackupValidation {
         rows("buildings") {
             check(it, ints = "id level", doubles = "baseCost costMultiplier productionRatePerLevel inputAmountPerSec",
                 strings = "name resourceProduced", bools = "isAutomated isAutoSelling")
+            if ((payload["backupVersion"] as Number).toInt() >= 6) check(it,
+                longs = "cycleStartedAtMs cycleEndsAtMs", doubles = "cycleOutput cycleSalePrice")
             require(it["inputResource"] == null || it["inputResource"] == org.json.JSONObject.NULL || it["inputResource"] is String)
         }
         rows("combatUnits") { check(it, ints = "id level health attack", doubles = "upgradeCost costMultiplier", strings = "name type") }

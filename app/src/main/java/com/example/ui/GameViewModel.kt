@@ -70,6 +70,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private val _offlineEarnings = MutableStateFlow<OfflineEarnings?>(null)
     val offlineEarnings: StateFlow<OfflineEarnings?> = _offlineEarnings.asStateFlow()
 
+    private val _manualFeedback = MutableStateFlow<Map<Int, String>>(emptyMap())
+    val manualFeedback: StateFlow<Map<Int, String>> = _manualFeedback.asStateFlow()
+
     // Fluctuating market prices
     private val _marketPrices = MutableStateFlow<Map<String, Double>>(
         mapOf(
@@ -211,39 +214,22 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun startResourceTickLoop() {
         while (true) {
             try {
-                delay(1000)
+                delay(250)
                 repository.runProductionTransaction {
-                val activeState = repository.getGameStateDirect() ?: return@runProductionTransaction
                 val tickTime = System.currentTimeMillis()
-                if (tickTime <= activeState.lastSavedTime || tickTime - activeState.lastSavedTime < 1000) return@runProductionTransaction
+                val tick = repository.advanceProductionInTransaction(tickTime, marketPrices.value)
+                    ?: return@runProductionTransaction
                 val bList = repository.getBuildingsDirect()
                 if (bList.isEmpty()) return@runProductionTransaction
 
-                val tick = ProductionEngine.step(activeState, bList, repository.getResourcesDirect(),
-                    repository.getResearchersDirect(), marketPrices.value)
                 val resMap = tick.resources.associate { it.name to it.quantity }
-                val creditsGainedThisTick = tick.cash
-                val comradeRate = tick.comrades
                 for (building in bList) {
-                    val produced = tick.produced[building.id.toString()] ?: 0.0
+                    val produced = tick.produced[building.id] ?: 0.0
                     incrementSeasonalProgress(building.resourceProduced, produced)
                     incrementGuildProgress(building.resourceProduced, produced)
                 }
 
-                // Save updated resource quantities back to repository
-                val updated = resMap.map { ResourceInventory(it.key, it.value) }
-                repository.updateResources(updated)
-
-                // Save updated GameState along with passive comrades gains
-                val newestState = repository.getGameStateDirect() ?: activeState
-                val nextCash = newestState.cash + creditsGainedThisTick
-                val nextComrades = newestState.comrades + comradeRate
-                repository.saveGameState(newestState.copy(
-                    cash = nextCash,
-                    comrades = nextComrades,
-                    comradesPerSec = comradeRate,
-                    lastSavedTime = tickTime
-                ))
+                val nextCash = repository.getGameStateDirect()?.cash ?: 0.0
 
                 // 3. Process Active Missions
                 val activeMissionsList = repository.getActiveMissionsDirect()
@@ -532,32 +518,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun produceManual(buildingId: Int) {
         viewModelScope.launch {
-            repository.runProductionTransaction {
-            val activeState = repository.getGameStateDirect() ?: return@runProductionTransaction
-            val building = repository.getBuildingsDirect().find { it.id == buildingId }
-                ?: return@runProductionTransaction
-            if (building.level == 0 || building.isAutomated) return@runProductionTransaction
-            val resList = repository.getResourcesDirect()
-            val resMap = resList.associate { it.name to it.quantity }.toMutableMap()
-
-            val tick = ProductionEngine.step(activeState, listOf(building.copy(isAutomated = true)),
-                resList, repository.getResearchersDirect(), marketPrices.value)
-            resMap.clear()
-            resMap.putAll(tick.resources.associate { it.name to it.quantity })
-            val actualProduced = tick.produced[building.id.toString()] ?: 0.0
-            val cashGained = tick.cash
-            incrementSeasonalProgress(building.resourceProduced, actualProduced)
-            incrementGuildProgress(building.resourceProduced, actualProduced)
-
-            // Save updated resource quantities back to repository
-            val updated = resMap.map { ResourceInventory(it.key, it.value) }
-            repository.updateResources(updated)
-
-            if (cashGained > 0.0 || actualProduced > 0.0) {
-                repository.saveGameState(activeState.copy(
-                    cash = activeState.cash + cashGained
-                ))
-            }
+            try {
+                val started = repository.startManualCycle(buildingId, System.currentTimeMillis(), marketPrices.value)
+                _manualFeedback.update { it + (buildingId to if (started) "" else "Insumos insuficientes ou ciclo em andamento") }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                android.util.Log.e("GameViewModel", "Manual production failed", e)
+                _manualFeedback.update { it + (buildingId to "Não foi possível iniciar o ciclo") }
             }
         }
     }
