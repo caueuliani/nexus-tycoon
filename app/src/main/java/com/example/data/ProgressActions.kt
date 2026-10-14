@@ -182,13 +182,14 @@ suspend fun GameRepository.claimMissionReward(missionId: Int, onSuccess: (Long, 
         val grant = ResearcherRewards.roll(scientists, cardsNumber, null)
         saveResearchers(grant.researchers)
 
-        val nextCompleted = (freshState.completedRankMissions + 1).coerceAtMost(3)
+        val nextCompleted = (freshState.completedRankMissions + 1)
+            .coerceAtMost(missionLimitForRank(freshState.playerRank))
         saveGameState(freshState.copy(
         starGems = Math.addExact(freshState.starGems, gemsReward.toLong()),
         science = Math.addExact(freshState.science, scienceReward.toLong()),
         completedRankMissions = nextCompleted
         ))
-        fillMissionSlots(freshState.playerRank)
+        fillMissionSlots(freshState.playerRank, nextCompleted)
 
         notifications.add { onSuccess(gemsReward, scienceReward, m.rewardCapsuleType, grant.labels) }
     }
@@ -199,10 +200,11 @@ suspend fun GameRepository.rankUpPlayer(onSuccess: (Int, Long, List<String>) -> 
     val notifications = mutableListOf<() -> Unit>()
     runProgressTransaction {
         val freshState = getGameStateDirect() ?: return@runProgressTransaction
-        if (freshState.completedRankMissions < 3) return@runProgressTransaction
+        if (freshState.completedRankMissions < missionLimitForRank(freshState.playerRank))
+            return@runProgressTransaction
         val nextRank = freshState.playerRank + 1
-        // Existing missions retain their IDs and progress; only unlocked slots are added.
-        fillMissionSlots(nextRank)
+        // The completed rank's finite batch is over; new IDs prevent late callbacks
+        // for old missions from matching missions in the next rank.
 
         val scientists = getResearchersDirect()
         val rewardScienceGain = (100 * nextRank).toLong()
@@ -217,6 +219,7 @@ suspend fun GameRepository.rankUpPlayer(onSuccess: (Int, Long, List<String>) -> 
         starGems = Math.addExact(freshState.starGems, rewardGemsGain.toLong()),
         science = Math.addExact(freshState.science, rewardScienceGain.toLong())
         ))
+        startNewMissionCycle(nextRank)
 
         notifications.add { onSuccess(nextRank, rewardScienceGain, grant.labels) }
     }

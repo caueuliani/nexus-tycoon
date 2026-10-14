@@ -5,6 +5,16 @@ import kotlin.math.pow
 internal fun missionLimitForRank(rank: Int): Int =
     if (rank <= 3) 3 else (4 + (rank - 4) / 2).coerceAtMost(12)
 
+internal fun missionActiveSlotLimitForRank(rank: Int): Int = missionLimitForRank(rank).coerceAtMost(4)
+
+internal fun missionVisibleLimit(rank: Int, completed: Int): Int =
+    (missionLimitForRank(rank) - completed).coerceAtLeast(0).coerceAtMost(4)
+
+internal fun visibleMissions(rank: Int, completed: Int, existing: List<ActiveMission>): List<ActiveMission> =
+    existing.filterNot { it.isClaimed }
+        .sortedWith(compareByDescending<ActiveMission> { it.isCompleted }.thenBy { it.id })
+        .take(missionVisibleLimit(rank, completed))
+
 // Keep the existing three mission templates, targets and individual rewards.
 internal fun missionForRank(rank: Int, id: Int): ActiveMission {
     if (rank == 1) return initialRankMissions()[(id - 1) % 3].copy(id = id, progress = 0.0)
@@ -30,10 +40,23 @@ internal fun missionForRank(rank: Int, id: Int): ActiveMission {
     }
 }
 
-internal fun missingMissions(rank: Int, existing: List<ActiveMission>): List<ActiveMission> {
-    val missing = (missionLimitForRank(rank) - existing.count { !it.isClaimed }).coerceAtLeast(0)
-    val firstId = (existing.maxOfOrNull { it.id } ?: 0) + 1
+internal fun missingMissions(rank: Int, completed: Int, existing: List<ActiveMission>,
+    minimumNextId: Int = 1): List<ActiveMission> {
+    val missing = (missionVisibleLimit(rank, completed) - existing.count { !it.isClaimed }).coerceAtLeast(0)
+    val firstId = maxOf((existing.maxOfOrNull { it.id } ?: 0) + 1, minimumNextId)
     return (firstId until firstId + missing).map { missionForRank(rank, it) }
+}
+
+internal fun withCurrentMissionProgress(mission: ActiveMission, cash: Double,
+    resources: Map<String, Double>, buildingLevels: Map<Int, Int>): ActiveMission {
+    val current = when (mission.missionType) {
+        "OWN_BUILDING" -> buildingLevels[mission.targetId]?.toDouble() ?: 0.0
+        "COLLECT_RESOURCE" -> resources[mission.targetString] ?: 0.0
+        "EARN_CASH" -> cash
+        else -> mission.progress
+    }
+    val progress = current.coerceIn(0.0, mission.target)
+    return mission.copy(progress = progress, isCompleted = progress >= mission.target)
 }
 
 private fun missionResourceForRank(rank: Int): String = when (rank % 8) {

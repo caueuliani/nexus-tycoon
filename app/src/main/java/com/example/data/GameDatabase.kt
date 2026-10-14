@@ -288,6 +288,9 @@ interface GameDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveActiveMissions(missions: List<ActiveMission>)
 
+    @Query("DELETE FROM active_missions WHERE id IN (:ids)")
+    suspend fun deleteMissionsByIds(ids: List<Int>)
+
     @Update
     suspend fun updateActiveMission(mission: ActiveMission)
 }

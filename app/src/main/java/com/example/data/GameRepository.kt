@@ -73,7 +73,7 @@ class GameRepository(private val db: GameDatabase) {
             dao.saveResearchers(ResearcherCatalog.withMissing(savedResearchers).filter { candidate ->
                 savedResearchers.none { it.id == candidate.id && it == candidate }
             })
-            dao.saveActiveMissions(missingMissions(state.playerRank, dao.getActiveMissionsDirect()))
+            fillMissionSlots(state.playerRank, state.completedRankMissions)
             return@withTransaction
         }
         check(buildingsList.isEmpty() && dao.getResourcesDirect().isEmpty() &&
@@ -678,8 +678,11 @@ class GameRepository(private val db: GameDatabase) {
 
         // Mission rewards already collected remain in the state/researchers above.
         // Replace every mission from the previous run, including partial progress.
+        val nextMissionId = (dao.getActiveMissionsDirect().maxOfOrNull { it.id } ?: 0) + 1
         dao.clearMissions()
-        dao.saveActiveMissions(initialRankMissions())
+        dao.saveActiveMissions(initialRankMissions().mapIndexed { index, mission ->
+            mission.copy(id = nextMissionId + index)
+        })
         
         return@withTransaction true
     }
@@ -774,7 +777,7 @@ class GameRepository(private val db: GameDatabase) {
         dao.saveCombatUnits(combatUnits)
         dao.saveResearchers(ResearcherCatalog.withMissing(researchers))
         dao.saveActiveMissions(missions)
-        dao.saveActiveMissions(missingMissions(state.playerRank, dao.getActiveMissionsDirect()))
+        fillMissionSlots(state.playerRank, state.completedRankMissions)
         check(dao.getBuildingsDirect() == buildings.sortedBy { it.id }) {
             "Os níveis das fábricas não puderam ser restaurados."
         }
@@ -793,7 +796,31 @@ class GameRepository(private val db: GameDatabase) {
     suspend fun saveActiveMissions(list: List<ActiveMission>) = dao.saveActiveMissions(list)
     suspend fun getActiveMissionsDirect(): List<ActiveMission> = dao.getActiveMissionsDirect()
 
-    suspend fun fillMissionSlots(rank: Int) = dao.saveActiveMissions(missingMissions(rank, dao.getActiveMissionsDirect()))
+    suspend fun fillMissionSlots(rank: Int, completed: Int, minimumNextId: Int = 1) {
+        val existing = dao.getActiveMissionsDirect()
+        val target = missionVisibleLimit(rank, completed)
+        val active = existing.filterNot { it.isClaimed }
+        if (active.size > target) {
+            // Preserve completed and older missions where possible when repairing a legacy save.
+            val keep = active.sortedWith(compareByDescending<ActiveMission> { it.isCompleted }.thenBy { it.id })
+                .take(target).map { it.id }.toSet()
+            dao.deleteMissionsByIds(active.filterNot { it.id in keep }.map { it.id })
+        }
+        val current = dao.getActiveMissionsDirect()
+        val missing = missingMissions(rank, completed, current, minimumNextId)
+        if (missing.isNotEmpty()) {
+            val cash = dao.getGameStateDirect()?.cash ?: 0.0
+            val stocks = dao.getResourcesDirect().associate { it.name to it.quantity }
+            val levels = dao.getBuildingsDirect().associate { it.id to it.level }
+            dao.saveActiveMissions(missing.map { withCurrentMissionProgress(it, cash, stocks, levels) })
+        }
+    }
+
+    suspend fun startNewMissionCycle(rank: Int) {
+        val nextMissionId = (dao.getActiveMissionsDirect().maxOfOrNull { it.id } ?: 0) + 1
+        dao.clearMissions()
+        fillMissionSlots(rank, completed = 0, minimumNextId = nextMissionId)
+    }
 
     companion object {
         @Volatile

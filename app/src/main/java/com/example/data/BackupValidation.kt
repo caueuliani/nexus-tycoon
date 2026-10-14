@@ -66,7 +66,8 @@ object BackupValidation {
         require(listOf(s.starGems, s.guildTokens, s.science, s.lastSavedTime).all { it >= 0 })
         require(listOf(s.scienceProdLevel, s.scienceCreditsLevel, s.scienceComradeLevel, s.scienceCombatLevel,
             s.stage1CompletedCount, s.stage2CompletedCount, s.stage3CompletedCount, s.stage4CompletedCount).all { it >= 0 && it < Int.MAX_VALUE })
-        require(s.playerRank > 0 && s.playerRank < Int.MAX_VALUE && s.completedRankMissions in 0..3)
+        require(s.playerRank > 0 && s.playerRank < Int.MAX_VALUE &&
+            s.completedRankMissions in 0..missionLimitForRank(s.playerRank))
         require(s.highestCombatStage in 1..5 && s.selectedSkinId in 0..2 && s.selectedAvatarId in 0..7)
     }
 

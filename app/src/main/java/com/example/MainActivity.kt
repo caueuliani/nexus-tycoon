@@ -197,6 +197,8 @@ fun MainAppContent(viewModel: GameViewModel) {
     val offlineReport by viewModel.offlineEarnings.collectAsStateWithLifecycle()
 
     var activeTab by rememberSaveable { mutableIntStateOf(0) } // 0: Industry, 1: Combat, 2: Market, 3: Guild, 4: Profile, 5: Ascension, 6: Shop
+    var ascendingFromCores by rememberSaveable { mutableLongStateOf(-1L) }
+    var ascensionReward by rememberSaveable { mutableLongStateOf(-1L) }
     val configuration = LocalConfiguration.current
     val isWideScreen = configuration.screenWidthDp >= 600
 
@@ -212,6 +214,28 @@ fun MainAppContent(viewModel: GameViewModel) {
             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
         }
         return
+    }
+
+    LaunchedEffect(state.nebulaCores, ascendingFromCores) {
+        if (ascendingFromCores >= 0L && state.nebulaCores > ascendingFromCores) {
+            ascensionReward = state.nebulaCores - ascendingFromCores
+            ascendingFromCores = -1L
+            activeTab = 0
+        }
+    }
+    LaunchedEffect(ascendingFromCores) {
+        if (ascendingFromCores >= 0L) {
+            kotlinx.coroutines.delay(10_000)
+            // A pending operation cannot survive process death; never trap the player behind the overlay.
+            ascendingFromCores = -1L
+        }
+    }
+
+    if (ascendingFromCores >= 0L || ascensionReward >= 0L) {
+        AscensionTransition(
+            rewardCores = ascensionReward.takeIf { it >= 0L },
+            onContinue = { ascensionReward = -1L }
+        )
     }
 
     // Offline income dialog
@@ -327,7 +351,9 @@ fun MainAppContent(viewModel: GameViewModel) {
                     state = state,
                     resources = resources,
                     buildings = buildings,
-                    combatUnits = combatUnits
+                    combatUnits = combatUnits,
+                    onAscensionStarted = { ascendingFromCores = state.nebulaCores },
+                    onAscensionFailed = { ascendingFromCores = -1L }
                 )
             }
         }
@@ -409,7 +435,9 @@ fun MainAppContent(viewModel: GameViewModel) {
                     state = state,
                     resources = resources,
                     buildings = buildings,
-                    combatUnits = combatUnits
+                    combatUnits = combatUnits,
+                    onAscensionStarted = { ascendingFromCores = state.nebulaCores },
+                    onAscensionFailed = { ascendingFromCores = -1L }
                 )
             }
         }
@@ -423,7 +451,9 @@ fun TabContent(
     state: GameState,
     resources: List<ResourceInventory>,
     buildings: List<BusinessBuilding>,
-    combatUnits: List<CombatUnit>
+    combatUnits: List<CombatUnit>,
+    onAscensionStarted: () -> Unit,
+    onAscensionFailed: () -> Unit
 ) {
     // Destinations can contain several live animations; composing both screens during
     // a crossfade causes a visible pause on lower-end phones.
@@ -433,7 +463,7 @@ fun TabContent(
         2 -> MarketTab(viewModel, state, resources)
         3 -> GuildTab(viewModel, state)
         4 -> ProfileTab(viewModel, state)
-        5 -> AscensionTab(viewModel, state)
+        5 -> AscensionTab(viewModel, state, onAscensionStarted, onAscensionFailed)
         6 -> ShopAndEventTab(viewModel, state)
     }
 }
@@ -556,7 +586,7 @@ fun IndustryTab(
                         ) {
                             Icon(Icons.Filled.Assignment, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Missões (${activeMissions.count { !it.isClaimed }})", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text("Missões (${visibleMissions(state.playerRank, state.completedRankMissions, activeMissions).size})", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         }
                         Button(
                             onClick = { showResearchersDialog = true },
@@ -726,6 +756,15 @@ fun MissionsDialog(
     var rewardCapType by remember { mutableStateOf<String?>(null) }
     var rewardCards by remember { mutableStateOf<List<String>>(emptyList()) }
     var showCapsuleAlert by remember { mutableStateOf(false) }
+    var promotionRank by remember { mutableIntStateOf(0) }
+    var promotionSlots by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(promotionRank, showCapsuleAlert) {
+        if (promotionRank > 0 && !showCapsuleAlert) {
+            kotlinx.coroutines.delay(4000)
+            promotionRank = 0
+        }
+    }
 
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -749,6 +788,19 @@ fun MissionsDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
+                AnimatedVisibility(visible = promotionRank > 0 && !showCapsuleAlert,
+                    enter = fadeIn() + expandVertically(), exit = fadeOut()) {
+                    Column(modifier = Modifier.fillMaxWidth()
+                        .background(Brush.horizontalGradient(listOf(SolarGold.copy(alpha = 0.32f), NeonMagenta.copy(alpha = 0.2f))),
+                            RoundedCornerShape(12.dp)).padding(12.dp)) {
+                        Text("PATENTE $promotionRank ALCANÇADA ✦", color = SolarGold,
+                            fontWeight = FontWeight.Black, fontSize = 17.sp)
+                        Text("Super Cápsula e recompensas da promoção liberadas", color = TextWhite, fontSize = 12.sp)
+                        if (promotionSlots > 0) Text("+$promotionSlots missão simultânea", color = NeonCyan,
+                            fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+
                 Column(
                     modifier = Modifier
                         .weight(1f)
@@ -768,22 +820,25 @@ fun MissionsDialog(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text("Progresso da Patente", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = TextWhite)
-                                Text("${state.completedRankMissions}/3 Missões", fontWeight = FontWeight.ExtraBold, color = SolarGold)
+                                Text("${state.completedRankMissions}/${missionLimitForRank(state.playerRank)} Missões", fontWeight = FontWeight.ExtraBold, color = SolarGold)
                             }
                             Spacer(modifier = Modifier.height(6.dp))
                             LinearProgressIndicator(
-                                progress = (state.completedRankMissions / 3f).coerceIn(0f, 1f),
+                                progress = (state.completedRankMissions.toFloat() / missionLimitForRank(state.playerRank)).coerceIn(0f, 1f),
                                 modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
                                 color = SolarGold,
                                 trackColor = MaterialTheme.colorScheme.outlineVariant
                             )
                             
-                            if (state.completedRankMissions >= 3) {
+                            if (state.completedRankMissions >= missionLimitForRank(state.playerRank)) {
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Button(
                                     onClick = {
                                         viewModel.rankUpPlayer(
                                             onSuccess = { nextRank, science, cards ->
+                                                promotionRank = nextRank
+                                                promotionSlots = missionActiveSlotLimitForRank(nextRank) -
+                                                    missionActiveSlotLimitForRank(nextRank - 1)
                                                 rewardScience = science
                                                 rewardGems = 50L + nextRank * 10L
                                                 rewardCapType = "REPROMOÇÃO SUPREMA"
@@ -800,7 +855,9 @@ fun MissionsDialog(
                             } else {
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
-                                    "Complete as 3 missões para desbloquear sua promoção de patente e receber uma Super Cápsula de Cientistas!",
+                                    "Faltam ${missionLimitForRank(state.playerRank) - state.completedRankMissions} missões para a próxima patente e uma Super Cápsula." +
+                                        if (missionActiveSlotLimitForRank(state.playerRank + 1) > missionActiveSlotLimitForRank(state.playerRank))
+                                            " Próxima patente libera +1 missão simultânea." else "",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = TextMuted
                                 )
@@ -808,13 +865,16 @@ fun MissionsDialog(
                         }
                     }
 
-                    Text("Missões ativas (${missions.count { !it.isClaimed }}/${com.example.data.missionLimitForRank(state.playerRank)}):", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
+                    val visible = visibleMissions(state.playerRank, state.completedRankMissions, missions)
+                    val waiting = missions.count { !it.isClaimed } - visible.size
+                    Text("Missões ativas (${visible.size}/${missionActiveSlotLimitForRank(state.playerRank)}):", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
+                    if (waiting > 0) Text("$waiting ${if (waiting == 1) "missão" else "missões"} aguardando vaga; o progresso foi preservado.", color = TextMuted, style = MaterialTheme.typography.bodySmall)
 
                     if (missions.isEmpty()) {
                         Text("Nenhuma missão ativa carregada.", color = TextMuted)
                     }
 
-                    missions.filterNot { it.isClaimed }.forEach { m ->
+                    visible.forEach { m ->
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             border = BorderStroke(1.dp, if (m.isCompleted && !m.isClaimed) SolarGold else Color.Transparent),
@@ -898,36 +958,15 @@ fun MissionsDialog(
     }
 
     if (showCapsuleAlert) {
-        AlertDialog(
-            onDismissRequest = { showCapsuleAlert = false },
-            title = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.MilitaryTech, contentDescription = null, tint = SolarGold,
-                        modifier = Modifier.size(36.dp))
-                    Text("CONQUISTA DE PATENTE", fontWeight = FontWeight.Black, color = SolarGold, fontSize = 20.sp)
-                    Text("Tipo: Cápsula $rewardCapType", style = MaterialTheme.typography.bodySmall, color = TextMuted)
-                }
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp).verticalScroll(rememberScrollState()),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text("Você coletou suprimentos incríveis!", fontWeight = FontWeight.Bold, color = TextWhite)
-                    ScienceReward(rewardScience ?: 0)
-                    NexusRewardRow(gems = "+${rewardGems ?: 0}")
-                    Divider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Text("CARTAS CIENTÍFICAS OBTIDAS:", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    ResearcherRewardCards(rewardCards, researchers)
-                }
-            },
-            confirmButton = {
-                Button(onClick = { showCapsuleAlert = false }) {
-                    Text("OK")
-                }
-            }
-        )
+        if (rewardCards.isNotEmpty()) {
+            RewardPackOpening(rewardCapType ?: "COMUM", rewardCards, researchers,
+                rewardScience ?: 0, rewardGems ?: 0) { showCapsuleAlert = false }
+        } else {
+            AlertDialog(onDismissRequest = { showCapsuleAlert = false },
+                title = { Text("RECOMPENSA COLETADA") },
+                text = { Column { ScienceReward(rewardScience ?: 0); NexusRewardRow(gems = "+${rewardGems ?: 0}") } },
+                confirmButton = { Button(onClick = { showCapsuleAlert = false }) { Text("CONTINUAR") } })
+        }
     }
 }
 
@@ -945,6 +984,7 @@ fun ResearchersLabDialog(
     var shopCapType by remember { mutableStateOf("") }
     var showShopAlert by remember { mutableStateOf(false) }
     var evolvedResearcherId by remember { mutableStateOf<Int?>(null) }
+    var evolvedFromLevel by remember { mutableIntStateOf(0) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var selectedIndustry by remember { mutableIntStateOf(1) }
 
@@ -997,7 +1037,7 @@ fun ResearchersLabDialog(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                 // Accumulated Science Banner
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(
@@ -1006,31 +1046,14 @@ fun ResearchersLabDialog(
                         )
                         .border(1.dp, CosmicBorder, RoundedCornerShape(12.dp))
                         .padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Column {
-                        Text(
-                            text = "CIÊNCIA DISPONÍVEL",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextMuted,
-                            letterSpacing = 1.sp
-                        )
-                        Text(
-                            text = "Tokens para recrutamento e melhoria",
-                            fontSize = 11.sp,
-                            color = TextWhite.copy(alpha = 0.7f)
-                        )
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "${state.science} 🧪",
-                            fontWeight = FontWeight.Black,
-                            fontSize = 22.sp,
-                            color = SolarGold
-                        )
-                    }
+                    Text("CIÊNCIA DISPONÍVEL", fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                        color = TextMuted, letterSpacing = 1.sp)
+                    Text("${formatAmount(state.science.toDouble())} 🧪", fontWeight = FontWeight.Black,
+                        fontSize = 22.sp, color = SolarGold)
+                    Text("Tokens para recrutamento e melhoria", fontSize = 11.sp,
+                        color = TextWhite.copy(alpha = 0.7f))
                 }
 
                 // Section: Capsules Store
@@ -1239,13 +1262,16 @@ fun ResearchersLabDialog(
                             FilterChip(
                                 selected = selectedIndustry == industryId,
                                 onClick = { selectedIndustry = industryId },
-                                label = { Text(if (industryId == 0) "Globais" else "Indústria $industryId") }
+                                label = {
+                                    Text(if (industryId == 0) "Globais" else
+                                        com.example.data.ResearcherCatalog.industryDisplayNames[industryId - 1])
+                                }
                             )
                         }
                     }
                     Text(
                         if (selectedIndustry == 0) "PESQUISADORES GLOBAIS" else
-                            "${com.example.data.ResearcherCatalog.industries[selectedIndustry - 1]} • Produção / Velocidade / Eficiência",
+                            "${com.example.data.ResearcherCatalog.industryDisplayNames[selectedIndustry - 1]} • Produção / Velocidade / Eficiência",
                         color = NeonCyan, fontWeight = FontWeight.Black, fontSize = 11.sp
                     )
                     scientists.filter { it.targetBuildingId == selectedIndustry }.forEach { r ->
@@ -1254,7 +1280,10 @@ fun ResearchersLabDialog(
                             currentScience = state.science,
                             onUpgrade = {
                                 viewModel.upgradeResearcherCard(r.id,
-                                    onSuccess = { evolvedResearcherId = r.id },
+                                    onSuccess = {
+                                        evolvedFromLevel = r.level
+                                        evolvedResearcherId = r.id
+                                    },
                                     onError = { err -> errorMsg = err })
                             }
                         )
@@ -1282,90 +1311,8 @@ fun ResearchersLabDialog(
 } // Closes Dialog
 
     if (showShopAlert) {
-        AlertDialog(
-            onDismissRequest = { showShopAlert = false },
-            title = {
-                Text(
-                    text = "CÁPSULA REVELADA",
-                    fontWeight = FontWeight.Black,
-                    color = SolarGold,
-                    fontSize = 18.sp,
-                    letterSpacing = 1.sp
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp).verticalScroll(rememberScrollState()),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    val shopAsset = when (shopCapType.uppercase()) {
-                        "COMUM" -> R.drawable.img_capsule_comum
-                        "EPICA", "ÉPICA" -> R.drawable.img_capsule_epica
-                        "SUPREMA" -> R.drawable.img_capsule_suprema
-                        else -> R.drawable.img_capsule_comum
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .size(100.dp)
-                            .background(SolarGold.copy(alpha = 0.08f), CircleShape)
-                            .border(1.5.dp, SolarGold.copy(alpha = 0.3f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        SafeImage(
-                            resId = shopAsset,
-                            contentDescription = "Cápsula",
-                            modifier = Modifier.size(85.dp).clip(CircleShape),
-                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                            fallbackIcon = Icons.Filled.CardGiftcard,
-                            fallbackTint = SolarGold
-                        )
-                    }
-
-                    Text(
-                        text = "Suprimentos extraídos com sucesso para sua operação espacial:",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextWhite.copy(alpha = 0.8f),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        fontSize = 12.sp
-                    )
-
-                    ScienceReward(shopScienceGain ?: 0)
-
-                    Text(
-                        text = "CARTAS DE PESQUISADORES:",
-                        fontWeight = FontWeight.Bold,
-                        color = NeonCyan,
-                        fontSize = 11.sp,
-                        letterSpacing = 0.8.sp
-                    )
-
-                    ResearcherRewardCards(shopCardsObtained, scientists)
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = { showShopAlert = false },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = SolarGold,
-                        contentColor = Color.Black
-                    ),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(44.dp)
-                ) {
-                    Text(
-                        text = "ÓTIMO, RECOLHER! 🪐",
-                        fontWeight = FontWeight.Black,
-                        fontSize = 12.sp
-                    )
-                }
-            },
-            containerColor = CosmicDark,
-            tonalElevation = 8.dp
-        )
+        RewardPackOpening(shopCapType, shopCardsObtained, scientists,
+            shopScienceGain ?: 0) { showShopAlert = false }
     }
 
     if (errorMsg != null) {
@@ -1382,28 +1329,52 @@ fun ResearchersLabDialog(
     }
     evolvedResearcherId?.let { id ->
         val researcher = scientists.firstOrNull { it.id == id }
+        val revealScale = remember(id) { Animatable(0.88f) }
+        LaunchedEffect(id, researcher?.level) {
+            if (researcher != null && researcher.level > evolvedFromLevel) {
+                revealScale.animateTo(1.06f, tween(260, easing = FastOutSlowInEasing))
+                revealScale.animateTo(1f, tween(280))
+            }
+        }
         AlertDialog(
             onDismissRequest = { evolvedResearcherId = null },
             title = { Text("PESQUISADOR EVOLUÍDO", color = SolarGold, fontWeight = FontWeight.Black) },
             text = {
-                if (researcher != null) NexusPanel(
-                    accent = ResearcherStyle.color(researcher.rarity), modifier = Modifier.fillMaxWidth()
+                if (researcher != null && researcher.level > evolvedFromLevel) NexusPanel(
+                    accent = ResearcherStyle.color(researcher.rarity),
+                    modifier = Modifier.fillMaxWidth().graphicsLayer {
+                        scaleX = revealScale.value
+                        scaleY = revealScale.value
+                    }
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         ResearcherPortrait(researcher, 80.dp)
                         Column {
                             Text(researcher.name, fontWeight = FontWeight.Black)
-                            Text("Nível ${researcher.level}", color = ResearcherStyle.color(researcher.rarity))
+                            Text("Nível $evolvedFromLevel → ${researcher.level}",
+                                color = ResearcherStyle.color(researcher.rarity), fontWeight = FontWeight.Bold)
+                            Text("Bônus: ${researcherBonusLabel(researcher.copy(level = evolvedFromLevel))} → ${researcherBonusLabel(researcher)}",
+                                color = SuccessGreen, style = MaterialTheme.typography.bodySmall)
                             Text("${ResearcherStyle.label(researcher.rarity)} • ${researcher.description}",
                                 style = MaterialTheme.typography.bodySmall)
                         }
                     }
-                }
+                } else CircularProgressIndicator(color = SolarGold)
             },
             confirmButton = { TextButton(onClick = { evolvedResearcherId = null }) { Text("CONTINUAR") } },
             containerColor = CosmicDark
         )
+    }
+}
+
+private fun researcherBonusLabel(researcher: ResearcherCard): String {
+    val percent = (researcher.getBoostValue() * 100).toInt()
+    return when (researcher.boostType) {
+        "COST_REDUCTION" -> "−$percent% custo"
+        "SPEED" -> "+$percent% velocidade"
+        "COMRADE_GEN" -> "+$percent% equipe"
+        else -> "+$percent% produção"
     }
 }
 
@@ -2043,6 +2014,36 @@ fun BuildingProductionCard(
     val cycleDurationMs = if (cycleBusy) building.cycleEndsAtMs - building.cycleStartedAtMs else plan.durationMs
     val cycleProgress = if (cycleBusy) (1f - remainingMs.toFloat() / cycleDurationMs).coerceIn(0f, 1f) else 0f
 
+    var previousLevel by remember(building.id) { mutableIntStateOf(building.level) }
+    var reachedMilestone by remember(building.id) { mutableIntStateOf(0) }
+    var unlockedNow by remember(building.id) { mutableStateOf(false) }
+    val milestonePulse = remember(building.id) { Animatable(1f) }
+    LaunchedEffect(reachedMilestone) {
+        if (reachedMilestone > 0) {
+            milestonePulse.snapTo(0.94f)
+            milestonePulse.animateTo(1.03f, tween(240, easing = FastOutSlowInEasing))
+            milestonePulse.animateTo(1f, tween(280))
+        }
+    }
+    LaunchedEffect(building.level) {
+        val oldLevel = previousLevel
+        previousLevel = building.level
+        if (building.level <= oldLevel) return@LaunchedEffect
+        if (oldLevel == 0) unlockedNow = true
+        var crossed = building.copy(level = oldLevel).getNextMilestone()
+        while (crossed <= building.level) {
+            reachedMilestone = crossed
+            val next = building.copy(level = crossed).getNextMilestone()
+            if (next <= crossed) break
+            crossed = next
+        }
+        if (unlockedNow || reachedMilestone > 0) {
+            kotlinx.coroutines.delay(2800)
+            unlockedNow = false
+            reachedMilestone = 0
+        }
+    }
+
     // High-fidelity animation loop for spinning/pulsating building gears
     val infiniteRotation = rememberInfiniteTransition(label = "BuildingIconRotation")
     val rotationAngle by infiniteRotation.animateFloat(
@@ -2119,6 +2120,13 @@ fun BuildingProductionCard(
             }
 
             Spacer(modifier = Modifier.height(8.dp))
+            AnimatedVisibility(visible = unlockedNow, enter = fadeIn() + expandVertically(), exit = fadeOut()) {
+                Text("NOVA INDÚSTRIA • ${translateText(building.name)}\nNova fonte de produção aberta",
+                    color = themeColor, fontWeight = FontWeight.Black, fontSize = 12.sp,
+                    modifier = Modifier.fillMaxWidth()
+                        .background(themeColor.copy(alpha = 0.16f), RoundedCornerShape(10.dp))
+                        .padding(10.dp))
+            }
             if (isLocked) {
                 Button(
                     onClick = onUpgrade,
@@ -2234,6 +2242,17 @@ fun BuildingProductionCard(
                     }
                     val progressRatio = ((building.level - prevMilestone).toFloat() / (nextMilestone - prevMilestone).toFloat()).coerceIn(0f, 1f)
                     val nextBoost = building.getNextMilestoneMultiplierBoost()
+                    val remainingLevels = nextMilestone - building.level
+
+                    AnimatedVisibility(visible = reachedMilestone > 0,
+                        enter = fadeIn() + expandVertically(), exit = fadeOut()) {
+                        val achieved = building.copy(level = reachedMilestone)
+                        Text("MARCO ALCANÇADO • Nív $reachedMilestone  ✦  Produção x${achieved.getMilestoneMultiplier()}",
+                            color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Black,
+                            modifier = Modifier.fillMaxWidth()
+                                .graphicsLayer { scaleX = milestonePulse.value; scaleY = milestonePulse.value }
+                                .background(NeonCyan, RoundedCornerShape(8.dp)).padding(10.dp))
+                    }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -2258,13 +2277,16 @@ fun BuildingProductionCard(
                     Spacer(modifier = Modifier.height(4.dp))
                     LinearProgressIndicator(
                         progress = progressRatio,
-                        color = NeonCyan,
+                        color = if (remainingLevels <= 3) SolarGold else NeonCyan,
                         trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(4.dp)
                             .clip(RoundedCornerShape(2.dp))
                     )
+                    Text("Faltam $remainingLevels níveis para o próximo marco",
+                        fontSize = 10.sp, fontWeight = if (remainingLevels <= 3) FontWeight.Bold else FontWeight.Normal,
+                        color = if (remainingLevels <= 3) SolarGold else TextMuted)
                 }
 
                 // If not automated, render manual actions in a dedicated full-width split-row
@@ -2394,10 +2416,6 @@ fun BuildingProductionCard(
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
-                    }
-                    if (currentCash < cost || levelsGained == 0) {
-                        Text("Créditos insuficientes para a melhoria selecionada", color = TextMuted,
-                            style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -3580,7 +3598,9 @@ fun ProfileTab(
 @Composable
 fun AscensionTab(
     viewModel: GameViewModel,
-    state: GameState
+    state: GameState,
+    onAscensionStarted: () -> Unit,
+    onAscensionFailed: () -> Unit
 ) {
     val prestigeBonusPct = (state.nebulaCores * 10).toInt()
     val currentCash = state.cash
@@ -3596,20 +3616,31 @@ fun AscensionTab(
     var prestigePending by remember { mutableStateOf(false) }
 
     if (showPrestigeConfirmation) {
-        AlertDialog(
-            onDismissRequest = { if (!prestigePending) showPrestigeConfirmation = false },
-            title = { Text("Confirmar Ascensão Estelar") },
-            text = {
-                Text("Uma nova run começará na patente inicial, com as missões iniciais. " +
-                    "Créditos, estoques e fábricas serão reiniciados. " +
-                    "Gemas, ciência, pesquisadores e suas cartas, Núcleos de Nebulosa, " +
-                    "melhorias permanentes e recompensas já resgatadas permanecem.")
-            },
-            confirmButton = {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { if (!prestigePending) showPrestigeConfirmation = false }
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth()
+                    .background(Color(0xFF211D30), RoundedCornerShape(24.dp))
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text("Confirmar Ascensão", color = TextWhite, style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    "Uma nova run começará na patente inicial, com as missões iniciais. " +
+                        "Créditos, estoques e fábricas serão reiniciados. " +
+                        "Gemas, ciência, pesquisadores e suas cartas, Núcleos de Nebulosa, " +
+                        "melhorias permanentes e recompensas já resgatadas permanecem.",
+                    color = TextWhite,
+                    style = MaterialTheme.typography.bodyMedium
+                )
                 Button(
                     enabled = !prestigePending,
+                    modifier = Modifier.fillMaxWidth(),
                     onClick = {
+                        if (prestigePending) return@Button
                         prestigePending = true
+                        onAscensionStarted()
                         viewModel.performPrestigeAction(
                             onSuccess = {
                                 prestigePending = false
@@ -3619,6 +3650,7 @@ fun AscensionTab(
                             },
                             onError = {
                                 prestigePending = false
+                                onAscensionFailed()
                                 showPrestigeConfirmation = false
                                 prestigeError = it
                                 prestigeSuccess = ""
@@ -3626,13 +3658,12 @@ fun AscensionTab(
                         )
                     }
                 ) { Text(if (prestigePending) "Ascendendo…" else "Confirmar Ascensão") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showPrestigeConfirmation = false }, enabled = !prestigePending) {
+                TextButton(onClick = { showPrestigeConfirmation = false }, enabled = !prestigePending,
+                    modifier = Modifier.align(Alignment.End)) {
                     Text("Cancelar")
                 }
             }
-        )
+        }
     }
 
     Column(

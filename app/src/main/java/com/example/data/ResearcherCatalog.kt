@@ -6,6 +6,23 @@ internal object ResearcherCatalog {
         "Sol-Power Array", "Deep-Core Drill", "Alloy Smelter", "Quantum Assembler",
         "Biosphere Dome", "Cybernetics Lab", "Antimatter Reactor", "Galactic Shipyard"
     )
+    val industryDisplayNames = listOf(
+        "Matriz de Energia Solar", "Sonda de Perfuração Profunda", "Fundição de Metal",
+        "Montador Quântico", "Domo de Biosfera", "Laboratório Cibernético",
+        "Reator de Antimatéria", "Estaleiro Estelar"
+    )
+
+    // Stable card IDs: changing display names must never reset collected copies or levels.
+    private val expansionNames = mapOf(
+        7 to "Hélio Forja", 8 to "Íris Volt",
+        9 to "Nara Túnel", 10 to "Otto Veio",
+        11 to "Ferrus Maxwell", 12 to "Veda Calibre",
+        13 to "Kira Flux", 14 to "Pascal Nano",
+        15 to "Gaia Bloom", 16 to "Vita Sprint", 17 to "Lúmen Poda",
+        18 to "Cora Circuit", 19 to "Nix Turbo", 20 to "Tessa Byte",
+        21 to "Nova Fissão", 22 to "Juno Impulso", 23 to "Sera Prisma",
+        24 to "Orion Doca", 25 to "Lyra Warp", 26 to "Vega Vetor"
+    )
 
     val cards: List<ResearcherCard> = buildList {
         add(ResearcherCard(1, "Elon Dusk-V", "Reduz o custo total de upgrades do Painel Solar em -15% por nível.", 1, 1, 2, 1, "COST_REDUCTION", "COMMON"))
@@ -16,8 +33,9 @@ internal object ResearcherCatalog {
         add(ResearcherCard(6, "Nebula Quantum Core", "Multiplica a produção global de TODAS as fábricas em +100% por nível.", 0, 0, 5, 0, "PRODUCTION", "SUPREME"))
 
         var id = 7
-        industries.forEachIndexed { index, industry ->
+        industries.forEachIndexed { index, _ ->
             val buildingId = index + 1
+            val industry = industryDisplayNames[index]
             val rarity = when (buildingId) {
                 1, 2 -> "COMMON"
                 3, 4 -> "RARE"
@@ -25,15 +43,13 @@ internal object ResearcherCatalog {
                 else -> "SUPREME"
             }
             val needed = when (rarity) { "COMMON" -> 2; "RARE" -> 3; else -> 5 }
-            val title = listOf("Solar", "Mineral", "Metalúrgica", "Quântica", "Biológica",
-                "Cibernética", "Antimatéria", "Galáctica")[index]
             val existing = this.filter { it.targetBuildingId == buildingId }.map { it.boostType }.toSet()
-            for ((type, label, effect) in listOf(
+            for ((type, _, effect) in listOf(
                 Triple("PRODUCTION", "Produção", "Aumenta em +200% por nível a produção de $industry."),
                 Triple("SPEED", "Velocidade", "Aumenta em +50% por nível a velocidade de $industry."),
                 Triple("COST_REDUCTION", "Eficiência", "Reduz em 15% por nível o custo em créditos das melhorias de $industry (até 80%).")
             )) {
-                if (type !in existing) add(ResearcherCard(id++, "$title • $label", effect,
+                if (type !in existing) add(ResearcherCard(id, expansionNames.getValue(id++), effect,
                     0, 0, needed, buildingId, type, rarity))
             }
         }
@@ -43,6 +59,10 @@ internal object ResearcherCatalog {
         val existing = saved.map { it.id }.toSet()
         val corrected = saved.map { card ->
             when {
+                card.id in expansionNames -> {
+                    val canonical = cards.first { it.id == card.id }
+                    card.copy(name = canonical.name, description = canonical.description)
+                }
                 card.id == 2 && card.description == "Duplica a taxa de faturamento da Broca de Perfuração." ->
                     card.copy(description = cards.first { it.id == 2 }.description)
                 card.id == 4 && card.description == "Duplica a taxa de processamento do Montador Quântico." ->

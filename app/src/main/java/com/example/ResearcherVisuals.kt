@@ -64,16 +64,30 @@ internal object ResearcherStyle {
         4 -> R.drawable.img_sci_albert
         5 -> R.drawable.img_sci_karl
         6 -> R.drawable.img_sci_nebula
+        7 -> R.drawable.img_sci_helio_forja
+        8 -> R.drawable.img_sci_iris_volt
+        9 -> R.drawable.img_sci_nara_tunel
+        10 -> R.drawable.img_sci_otto_veio
+        11 -> R.drawable.img_sci_ferrus_maxwell
+        12 -> R.drawable.img_sci_veda_calibre
+        13 -> R.drawable.img_sci_kira_flux
+        14 -> R.drawable.img_sci_pascal_nano
+        15 -> R.drawable.img_sci_gaia_bloom
+        16 -> R.drawable.img_sci_vita_sprint
+        17 -> R.drawable.img_sci_lumen_poda
+        18 -> R.drawable.img_sci_cora_circuit
+        19 -> R.drawable.img_sci_nix_turbo
+        20 -> R.drawable.img_sci_tessa_byte
+        21 -> R.drawable.img_sci_nova_fissao
+        22 -> R.drawable.img_sci_juno_impulso
+        23 -> R.drawable.img_sci_sera_prisma
+        24 -> R.drawable.img_sci_orion_doca
+        25 -> R.drawable.img_sci_lyra_warp
+        26 -> R.drawable.img_sci_vega_vetor
         else -> R.drawable.img_scientist_card
     }
 
-    fun artwork(researcher: ResearcherCard): Int = when {
-        researcher.id <= 6 -> artwork(researcher.id)
-        researcher.boostType == "COST_REDUCTION" -> R.drawable.img_sci_elon
-        researcher.boostType == "SPEED" -> R.drawable.img_sci_ada
-        researcher.targetBuildingId % 2 == 0 -> R.drawable.img_sci_curie
-        else -> R.drawable.img_sci_albert
-    }
+    fun artwork(researcher: ResearcherCard): Int = artwork(researcher.id)
 
     fun frame(color: Color) = NexusVisuals.frame(color)
 }
