@@ -1,6 +1,7 @@
 package com.example.ui
 
 import com.example.data.CombatReward
+import com.example.audio.SoundEvent
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,7 +16,8 @@ internal class CombatEngine(
     private val settle: suspend (String, Boolean) -> CombatReward?,
     private val onVictory: () -> Unit = {},
     private val random: (Double, Double) -> Double = { from, to -> Random.nextDouble(from, to) },
-    private val now: () -> Long = System::currentTimeMillis
+    private val now: () -> Long = System::currentTimeMillis,
+    private val onSound: (SoundEvent) -> Unit = {}
 ) {
     private val lock = Any()
     private var generation = 0L
@@ -104,6 +106,7 @@ internal class CombatEngine(
         val damage = (current.allyDmg * random(0.85, 1.15)).toInt()
         val enemyHp = max(0, current.enemyHp - damage)
         log("? Ally squad attacks doing $damage DMG!")
+        onSound(SoundEvent.ATTACK)
         if (enemyHp == 0) {
             mutableLive.value = current.copy(enemyHp = 0, round = current.round + 1, isShieldActive = false)
             finish(true)
@@ -125,6 +128,7 @@ internal class CombatEngine(
         shield.value = 10
         mutableLive.value = current.copy(isShieldActive = true)
         log("Tactical Action: DEFENSIVE ENERGY SHIELD DEPLOYED!")
+        onSound(SoundEvent.SKILL)
         true
     }
     fun laser(): Boolean = synchronized(lock) {
@@ -134,6 +138,7 @@ internal class CombatEngine(
         val damage = current.allyDmg * 2
         mutableLive.value = current.copy(enemyHp = max(0, current.enemyHp - damage))
         log("Tactical Action: ORBITAL ION LASER STRIKE! Deals $damage DMG!")
+        onSound(SoundEvent.SKILL)
         if (mutableLive.value!!.enemyHp == 0) finish(true)
         true
     }
@@ -145,6 +150,7 @@ internal class CombatEngine(
         val hp = min(current.allyMaxHp, current.allyHp + amount)
         mutableLive.value = current.copy(allyHp = hp)
         log("Tactical Action: NANITE AUTO-REPAIR SYSTEM. Restored ${hp - current.allyHp} HP!")
+        onSound(SoundEvent.SKILL)
         true
     }
 
@@ -165,6 +171,7 @@ internal class CombatEngine(
                     }
                     mutableStatus.value = if (reward != null && victory)
                         CombatStatus.Victory(reward.credits, reward.diamonds, reward.guildTokens) else CombatStatus.Defeated
+                    onSound(if (victory) SoundEvent.VICTORY else SoundEvent.DEFEAT)
                     saveReplay(final, victory, false)
                     if (victory) onVictory()
                 }

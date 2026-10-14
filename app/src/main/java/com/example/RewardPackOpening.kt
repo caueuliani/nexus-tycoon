@@ -33,6 +33,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.ResearcherCard
+import com.example.audio.LocalGameAudio
+import com.example.audio.SoundEvent
 import com.example.ui.theme.*
 import kotlinx.coroutines.delay
 
@@ -46,8 +48,20 @@ internal fun RewardPackOpening(
     gems: Long = 0,
     onClose: () -> Unit
 ) {
+    val audio = LocalGameAudio.current
     var phase by rememberSaveable { mutableIntStateOf(0) } // entrance, ready, opening, revealed
     var cardIndex by rememberSaveable { mutableIntStateOf(0) }
+    var soundedCardIndex by rememberSaveable { mutableIntStateOf(-1) }
+    fun revealEvent(index: Int): SoundEvent {
+        val entry = cards.getOrNull(index).orEmpty().replace(Regex(" \\(x[0-9]+\\)$"), "")
+        val rarity = researchers.firstOrNull { it.name == entry }?.rarity?.uppercase().orEmpty()
+        return when {
+            rarity.contains("SUPREM") || rarity.contains("LEND") -> SoundEvent.REVEAL_SUPREME
+            rarity.contains("EPIC") || rarity.contains("ÉPIC") -> SoundEvent.REVEAL_EPIC
+            rarity.contains("RARE") -> SoundEvent.REVEAL_RARE
+            else -> SoundEvent.REVEAL_COMMON
+        }
+    }
     var showAll by rememberSaveable { mutableStateOf(false) }
     val accent = when (capsuleType.uppercase()) {
         "COMUM" -> NeonCyan
@@ -57,7 +71,14 @@ internal fun RewardPackOpening(
     LaunchedEffect(phase) {
         when (phase) {
             0 -> { delay(380); phase = 1 }
-            2 -> { delay(460); phase = 3 }
+            2 -> {
+                delay(460)
+                if (soundedCardIndex < 0) {
+                    soundedCardIndex = 0
+                    if (cards.isNotEmpty()) audio.play(revealEvent(0))
+                }
+                phase = 3
+            }
         }
     }
     val scale by animateFloatAsState(
@@ -97,7 +118,10 @@ internal fun RewardPackOpening(
                         Modifier.size(240.dp).graphicsLayer { scaleX = scale; scaleY = scale }
                             .background(accent.copy(alpha = glow * 0.28f), CircleShape)
                             .border(2.dp, accent.copy(alpha = glow), CircleShape)
-                            .clickable(enabled = phase == 1) { phase = 2 }
+                            .clickable(enabled = phase == 1) {
+                                audio.play(SoundEvent.PACK_OPEN)
+                                phase = 2
+                            }
                             .testTag("reward_pack"),
                         contentAlignment = Alignment.Center
                     ) {
@@ -168,7 +192,14 @@ internal fun RewardPackOpening(
                         }
                     }
                     Button(onClick = {
-                        if (!showAll && cardIndex < cards.lastIndex) cardIndex++ else onClose()
+                        if (!showAll && cardIndex < cards.lastIndex) {
+                            val next = cardIndex + 1
+                            if (soundedCardIndex < next) {
+                                soundedCardIndex = next
+                                audio.play(revealEvent(next))
+                            }
+                            cardIndex = next
+                        } else onClose()
                     }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("reward_continue"),
                         colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Color.Black)) {
                         Text(if (!showAll && cardIndex < cards.lastIndex) "REVELAR PRÓXIMA" else "CONTINUAR",

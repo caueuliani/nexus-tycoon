@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
+import com.example.audio.SoundEvent
+import com.example.audio.SoundEventRouter
 import kotlinx.coroutines.Delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -15,6 +17,9 @@ import kotlin.math.pow
 import kotlin.random.Random
 
 class GameViewModel(application: Application) : AndroidViewModel(application) {
+    private val _soundEvents = MutableSharedFlow<SoundEvent>(extraBufferCapacity = 16)
+    val soundEvents = _soundEvents.asSharedFlow()
+    private fun sound(event: SoundEvent) { _soundEvents.tryEmit(event) }
     private val repository = GameRepository.getInstance(application)
     val cloudSaveManager = CloudSaveManager(application)
 
@@ -103,7 +108,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     )
     val marketTrends: StateFlow<Map<String, String>> = _marketTrends.asStateFlow()
 
-    private val combat = CombatEngine(viewModelScope, ::prepareBattle, repository::completeCombat, ::recordCombatVictory)
+    private val combat = CombatEngine(viewModelScope, ::prepareBattle, repository::completeCombat,
+        ::recordCombatVictory, onSound = ::sound)
     val combatActive = combat.active
     val combatLogs = combat.logs
     val combatStatus = combat.status
@@ -425,13 +431,25 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     // Upgrades handlers
     fun upgradeBuilding(id: Int) {
         viewModelScope.launch {
-            repository.upgradeBuilding(id, _upgradeMultiplier.value)
+            val before = repository.getBuildingsDirect().firstOrNull { it.id == id }
+            if (repository.upgradeBuilding(id, _upgradeMultiplier.value)) {
+                val after = repository.getBuildingsDirect().firstOrNull { it.id == id }
+                if (before != null && after != null) {
+                    val milestone = before.getNextMilestone()
+                    sound(when {
+                        before.level == 0 && after.level > 0 -> SoundEvent.UNLOCK
+                        milestone > before.level && milestone <= after.level -> SoundEvent.MILESTONE
+                        else -> SoundEvent.CONFIRM
+                    })
+                } else sound(SoundEvent.CONFIRM)
+            }
         }
     }
 
     fun automateBuildingWithGems(id: Int) {
         viewModelScope.launch {
-            repository.automateBuilding(id, gemCost = 35) // Cost 35 Gems
+            SoundEventRouter.confirmed(repository.automateBuilding(id, gemCost = 35),
+                SoundEvent.CONFIRM, ::sound)
         }
     }
 
@@ -439,7 +457,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val activeState = gameState.value ?: return
         if (autoSell && !activeState.hasAutoSellLicense) return // block if they don't have license
         viewModelScope.launch {
-            repository.toggleAutoSelling(id, autoSell)
+            SoundEventRouter.confirmed(repository.toggleAutoSelling(id, autoSell),
+                SoundEvent.NAVIGATE, ::sound)
         }
     }
 
@@ -448,7 +467,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun buyAutoSellLicenseWithGems(onSuccess: () -> Unit, onError: (String) -> Unit) {
-        viewModelScope.launch { repository.buyAutoSellLicenseWithGems(onSuccess, onError) }
+        viewModelScope.launch { repository.buyAutoSellLicenseWithGems({ sound(SoundEvent.CONFIRM); onSuccess() }, onError) }
     }
 
     fun purchaseSupplyCrateWithGems(onSuccess: () -> Unit, onError: (String) -> Unit) {
@@ -471,6 +490,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             val addedCash = 25000.0
             val success = repository.addSuppliesAndCash(100L, resourcesMap, addedCash)
             if (success) {
+                sound(SoundEvent.CONFIRM)
                 onSuccess()
             } else {
                 onError("Falha ao debitar gemas!")
@@ -487,6 +507,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val success = repository.applyTimeWarp(gemCost, hours)
             if (success) {
+                sound(SoundEvent.CONFIRM)
                 onSuccess()
             } else {
                 onError("Falha ao aplicar Dobra Temporal!")
@@ -509,6 +530,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val success = repository.performPrestige()
             if (success) {
+                sound(SoundEvent.ASCEND)
                 onSuccess()
             } else {
                 onError("Erro ao realizar a Ascensão Estelar!")
@@ -520,6 +542,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val started = repository.startManualCycle(buildingId, System.currentTimeMillis(), marketPrices.value)
+                if (started) sound(SoundEvent.NAVIGATE)
                 _manualFeedback.update { it + (buildingId to if (started) "" else "Insumos insuficientes ou ciclo em andamento") }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
@@ -531,7 +554,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun upgradeCombatUnit(id: Int) {
         viewModelScope.launch {
-            repository.upgradeCombatUnit(id)
+            SoundEventRouter.confirmed(repository.upgradeCombatUnit(id), SoundEvent.CONFIRM, ::sound)
         }
     }
 
@@ -540,7 +563,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val current = gameState.value
 
         viewModelScope.launch {
-            repository.sellResource(name, amount, price)
+            SoundEventRouter.confirmed(repository.sellResource(name, amount, price),
+                SoundEvent.CONFIRM, ::sound)
         }
     }
 
@@ -558,7 +582,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun buyPremiumPack(costCoins: Double, rewardGems: Long, packName: String) {
         viewModelScope.launch {
-            repository.exchangeCashForGems(costCoins, rewardGems)
+            SoundEventRouter.confirmed(repository.exchangeCashForGems(costCoins, rewardGems),
+                SoundEvent.CONFIRM, ::sound)
         }
     }
 
@@ -566,12 +591,17 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun claimEventReward(taskId: String) {
         viewModelScope.launch {
             val task = _seasonalChampionship.value.tasks.find { it.taskId == taskId } ?: return@launch
-            repository.claimCoreEvent(taskId, task.progress >= task.target)
+            SoundEventRouter.confirmed(repository.claimCoreEvent(taskId, task.progress >= task.target),
+                SoundEvent.MISSION, ::sound)
         }
     }
 
     fun buyStellarUpgrade(upgrade: StellarUpgrade, expectedLevel: Int, onResult: (Boolean) -> Unit) {
-        viewModelScope.launch { onResult(repository.buyStellarUpgrade(upgrade, expectedLevel)) }
+        viewModelScope.launch {
+            val success = repository.buyStellarUpgrade(upgrade, expectedLevel)
+            if (success) sound(SoundEvent.CONFIRM)
+            onResult(success)
+        }
     }
 
     // Join guild simulator
@@ -610,23 +640,32 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     // --- ADVENTURE COMMUNIST MECHANICS ---
 
     fun buyAndOpenCapsuleWithGems(type: String, onSuccess: (Long, List<String>) -> Unit, onError: (String) -> Unit) {
-        viewModelScope.launch { repository.buyAndOpenCapsuleWithGems(type, onSuccess, onError) }
+        viewModelScope.launch { repository.buyAndOpenCapsuleWithGems(type, { science, cards ->
+            sound(SoundEvent.CONFIRM)
+            onSuccess(science, cards)
+        }, onError) }
     }
 
     fun upgradeResearcherCard(id: Int, onSuccess: () -> Unit, onError: (String) -> Unit) {
-        viewModelScope.launch { repository.upgradeResearcherCard(id, onSuccess, onError) }
+        viewModelScope.launch { repository.upgradeResearcherCard(id, { sound(SoundEvent.CONFIRM); onSuccess() }, onError) }
     }
 
     fun claimMissionReward(missionId: Int, onSuccess: (Long, Long, String, List<String>) -> Unit) {
-        viewModelScope.launch { repository.claimMissionReward(missionId, onSuccess) }
+        viewModelScope.launch { repository.claimMissionReward(missionId) { gems, science, capsule, cards ->
+            sound(SoundEvent.MISSION)
+            onSuccess(gems, science, capsule, cards)
+        } }
     }
 
     fun rankUpPlayer(onSuccess: (Int, Long, List<String>) -> Unit) {
-        viewModelScope.launch { repository.rankUpPlayer(onSuccess) }
+        viewModelScope.launch { repository.rankUpPlayer { rank, science, cards ->
+            sound(SoundEvent.PROMOTION)
+            onSuccess(rank, science, cards)
+        } }
     }
 
     fun purchaseScienceUpgrade(upgradeType: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
-        viewModelScope.launch { repository.purchaseScienceUpgrade(upgradeType, onSuccess, onError) }
+        viewModelScope.launch { repository.purchaseScienceUpgrade(upgradeType, { sound(SoundEvent.CONFIRM); onSuccess() }, onError) }
     }
 
 

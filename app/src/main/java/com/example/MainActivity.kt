@@ -46,6 +46,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.*
+import com.example.audio.GameAudio
+import com.example.audio.LocalGameAudio
+import com.example.audio.SoundEvent
 import com.example.ui.*
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
@@ -57,6 +60,7 @@ private fun formatCycleSeconds(milliseconds: Long): String =
     String.format(Locale("pt", "BR"), "%.1f s", milliseconds.coerceAtLeast(0L) / 1000.0)
 
 class MainActivity : ComponentActivity() {
+    private val gameAudio by lazy { GameAudio(this) }
     val rewardedAds by lazy { com.example.ads.RewardedAdsController(this) }
     val playBilling by lazy { com.example.billing.PlayBillingController(this) }
     override fun onResume() {
@@ -64,8 +68,17 @@ class MainActivity : ComponentActivity() {
         playBilling.onResume()
     }
     override fun onDestroy() {
+        gameAudio.close()
         playBilling.close()
         super.onDestroy()
+    }
+    override fun onStart() {
+        super.onStart()
+        gameAudio.setForeground(true)
+    }
+    override fun onStop() {
+        gameAudio.setForeground(false)
+        super.onStop()
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,6 +88,7 @@ class MainActivity : ComponentActivity() {
             val state by gameViewModel.gameState.collectAsStateWithLifecycle()
             val selectedSkinId = state?.selectedSkinId ?: 0
 
+            CompositionLocalProvider(LocalGameAudio provides gameAudio) {
             MyApplicationTheme(selectedSkinId = selectedSkinId) {
                 CosmicUniverseBackground {
                     Surface(
@@ -84,6 +98,7 @@ class MainActivity : ComponentActivity() {
                         MainAppContent(viewModel = gameViewModel)
                     }
                 }
+            }
             }
         }
     }
@@ -189,6 +204,8 @@ fun CosmicUniverseBackground(content: @Composable () -> Unit) {
 
 @Composable
 fun MainAppContent(viewModel: GameViewModel) {
+    val audio = LocalGameAudio.current
+    LaunchedEffect(viewModel, audio) { viewModel.soundEvents.collect { audio.play(it) } }
     val stateNullable by viewModel.gameState.collectAsStateWithLifecycle()
     val state = stateNullable
     val resources by viewModel.resources.collectAsStateWithLifecycle()
@@ -197,6 +214,7 @@ fun MainAppContent(viewModel: GameViewModel) {
     val offlineReport by viewModel.offlineEarnings.collectAsStateWithLifecycle()
 
     var activeTab by rememberSaveable { mutableIntStateOf(0) } // 0: Industry, 1: Combat, 2: Market, 3: Guild, 4: Profile, 5: Ascension, 6: Shop
+    fun navigate(tab: Int) { if (activeTab != tab) { activeTab = tab; audio.play(SoundEvent.NAVIGATE) } }
     var ascendingFromCores by rememberSaveable { mutableLongStateOf(-1L) }
     var ascensionReward by rememberSaveable { mutableLongStateOf(-1L) }
     val configuration = LocalConfiguration.current
@@ -286,49 +304,49 @@ fun MainAppContent(viewModel: GameViewModel) {
                 Spacer(modifier = Modifier.weight(1f))
                 NavigationRailItem(
                     selected = activeTab == 0,
-                    onClick = { activeTab = 0 },
+                    onClick = { navigate(0) },
                     icon = { Icon(Icons.Filled.Business, contentDescription = "Indústria") },
                     label = { Text("Indústria", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
                     modifier = Modifier.testTag("nav_industry_pc")
                 )
                 NavigationRailItem(
                     selected = activeTab == 1,
-                    onClick = { activeTab = 1 },
+                    onClick = { navigate(1) },
                     icon = { Icon(Icons.Filled.Security, contentDescription = "Defesa") },
                     label = { Text("Defesa", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
                     modifier = Modifier.testTag("nav_combat_pc")
                 )
                 NavigationRailItem(
                     selected = activeTab == 2,
-                    onClick = { activeTab = 2 },
+                    onClick = { navigate(2) },
                     icon = { Icon(Icons.Filled.TrendingUp, contentDescription = "Mercado") },
                     label = { Text("Mercado", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
                     modifier = Modifier.testTag("nav_market_pc")
                 )
                 NavigationRailItem(
                     selected = activeTab == 3,
-                    onClick = { activeTab = 3 },
+                    onClick = { navigate(3) },
                     icon = { Icon(Icons.Filled.Group, contentDescription = "Aliança") },
                     label = { Text("Aliança", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
                     modifier = Modifier.testTag("nav_guild_pc")
                 )
                 NavigationRailItem(
                     selected = activeTab == 4,
-                    onClick = { activeTab = 4 },
+                    onClick = { navigate(4) },
                     icon = { Icon(Icons.Filled.AccountCircle, contentDescription = "Perfil") },
                     label = { Text("Perfil", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
                     modifier = Modifier.testTag("nav_profile_pc")
                 )
                 NavigationRailItem(
                     selected = activeTab == 5,
-                    onClick = { activeTab = 5 },
+                    onClick = { navigate(5) },
                     icon = { Icon(Icons.Filled.Autorenew, contentDescription = "Ascensão") },
                     label = { Text("Ascensão", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
                     modifier = Modifier.testTag("nav_ascension_pc")
                 )
                 NavigationRailItem(
                     selected = activeTab == 6,
-                    onClick = { activeTab = 6 },
+                    onClick = { navigate(6) },
                     icon = { Icon(Icons.Filled.ShoppingBag, contentDescription = "Premium") },
                     label = { Text("Premium", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
                     modifier = Modifier.testTag("nav_premium_pc")
@@ -367,7 +385,7 @@ fun MainAppContent(viewModel: GameViewModel) {
                 ) {
                     NavigationBarItem(
                         selected = activeTab == 0,
-                        onClick = { activeTab = 0 },
+                        onClick = { navigate(0) },
                         icon = { Icon(Icons.Filled.Business, contentDescription = null) },
                         label = { Text("Indústria", fontSize = 9.sp, maxLines = 1) },
                         alwaysShowLabel = false,
@@ -375,7 +393,7 @@ fun MainAppContent(viewModel: GameViewModel) {
                     )
                     NavigationBarItem(
                         selected = activeTab == 1,
-                        onClick = { activeTab = 1 },
+                        onClick = { navigate(1) },
                         icon = { Icon(Icons.Filled.Security, contentDescription = null) },
                         label = { Text("Defesa", fontSize = 9.sp, maxLines = 1) },
                         alwaysShowLabel = false,
@@ -383,7 +401,7 @@ fun MainAppContent(viewModel: GameViewModel) {
                     )
                     NavigationBarItem(
                         selected = activeTab == 2,
-                        onClick = { activeTab = 2 },
+                        onClick = { navigate(2) },
                         icon = { Icon(Icons.Filled.TrendingUp, contentDescription = null) },
                         label = { Text("Mercado", fontSize = 9.sp, maxLines = 1) },
                         alwaysShowLabel = false,
@@ -391,7 +409,7 @@ fun MainAppContent(viewModel: GameViewModel) {
                     )
                     NavigationBarItem(
                         selected = activeTab == 3,
-                        onClick = { activeTab = 3 },
+                        onClick = { navigate(3) },
                         icon = { Icon(Icons.Filled.Group, contentDescription = null) },
                         label = { Text("Aliança", fontSize = 9.sp, maxLines = 1) },
                         alwaysShowLabel = false,
@@ -399,7 +417,7 @@ fun MainAppContent(viewModel: GameViewModel) {
                     )
                     NavigationBarItem(
                         selected = activeTab == 4,
-                        onClick = { activeTab = 4 },
+                        onClick = { navigate(4) },
                         icon = { Icon(Icons.Filled.AccountCircle, contentDescription = null) },
                         label = { Text("Perfil", fontSize = 9.sp, maxLines = 1) },
                         alwaysShowLabel = false,
@@ -407,7 +425,7 @@ fun MainAppContent(viewModel: GameViewModel) {
                     )
                     NavigationBarItem(
                         selected = activeTab == 5,
-                        onClick = { activeTab = 5 },
+                        onClick = { navigate(5) },
                         icon = { Icon(Icons.Filled.Autorenew, contentDescription = null) },
                         label = { Text("Ascensão", fontSize = 9.sp, maxLines = 1) },
                         alwaysShowLabel = false,
@@ -415,7 +433,7 @@ fun MainAppContent(viewModel: GameViewModel) {
                     )
                     NavigationBarItem(
                         selected = activeTab == 6,
-                        onClick = { activeTab = 6 },
+                        onClick = { navigate(6) },
                         icon = { Icon(Icons.Filled.ShoppingBag, contentDescription = null) },
                         label = { Text("Premium", fontSize = 9.sp, maxLines = 1) },
                         alwaysShowLabel = false,
@@ -4651,6 +4669,7 @@ fun ProfileDialog(
     viewModel: GameViewModel,
     onDismiss: () -> Unit
 ) {
+    val audio = LocalGameAudio.current
     val state by viewModel.gameState.collectAsStateWithLifecycle()
     val activeState = state ?: return
 
@@ -4749,6 +4768,19 @@ fun ProfileDialog(
                 }
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Efeitos sonoros", color = SolarGold, fontWeight = FontWeight.Bold)
+                    Switch(checked = audio.enabled, onCheckedChange = { audio.updateEnabled(it) },
+                        modifier = Modifier.semantics { contentDescription = "Ativar efeitos sonoros" })
+                }
+                Text("Volume dos efeitos: ${audio.volume}%", color = TextWhite,
+                    style = MaterialTheme.typography.bodySmall)
+                Slider(value = audio.volume.toFloat(), onValueChange = { audio.updateVolume(it.toInt()) },
+                    valueRange = 0f..100f, enabled = audio.enabled,
+                    onValueChangeFinished = { audio.preview() },
+                    modifier = Modifier.semantics { contentDescription = "Volume dos efeitos sonoros" })
 
                 // Section: Google Sync
                 Row(verticalAlignment = Alignment.CenterVertically) {
