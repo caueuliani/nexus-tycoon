@@ -69,6 +69,8 @@ object BackupValidation {
         require(s.playerRank > 0 && s.playerRank < Int.MAX_VALUE &&
             s.completedRankMissions in 0..missionLimitForRank(s.playerRank))
         require(s.highestCombatStage in 1..5 && s.selectedSkinId in 0..2 && s.selectedAvatarId in 0..7)
+        require(s.novaSeenMask in 0..NovaPilot.ALL && s.novaPendingMask in 0..NovaPilot.ALL &&
+            (s.novaSeenMask and s.novaPendingMask) == 0)
     }
 
     /** Do not let Number.toInt()/toLong() truncate fractions or saturate overflows. */
@@ -93,6 +95,8 @@ object BackupValidation {
             ints = "industrialEngineeringLevel tacticalLogisticsLevel offlineReserveLevel", longs = "availableCores", strings = "claimedCoreEvents")
         if ((payload["backupVersion"] as Number).toInt() >= 5) check(payload,
             strings = "autoSellLicenseSource")
+        if ((payload["backupVersion"] as Number).toInt() >= 7) check(payload,
+            ints = "novaSeenMask novaPendingMask")
         fun rows(key: String, validate: (Map<*, *>) -> Unit) {
             val list = payload[key] as? List<*> ?: throw IllegalArgumentException("Tabela ausente: $key")
             list.forEach { validate(it as? Map<*, *> ?: throw IllegalArgumentException("Registro inválido: $key")) }

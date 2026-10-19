@@ -613,6 +613,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repository.completeTutorial() }
     }
 
+    fun dismissNova(event: Int) {
+        viewModelScope.launch { repository.acknowledgeNova(event) }
+    }
+
     fun resetTutorial() {
         viewModelScope.launch { repository.resetTutorial() }
     }

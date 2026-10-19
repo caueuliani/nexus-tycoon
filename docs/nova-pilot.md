@@ -1,0 +1,13 @@
+# N.O.V.A. — piloto narrativo
+
+N.O.V.A. significa **Núcleo Operacional de Vigilância e Ascensão**. É a IA de bordo do Comandante: competente, leal, confiante e brevemente sarcástica. Seu humor observa a escala absurda do império espacial; nunca ridiculariza perdas, erros ou o jogador. Falas futuras devem usar pt-BR, frases curtas, contexto específico e o tratamento “Comandante”. Evitar bordões repetidos, instruções longas, diálogos a cada compra e interrupção de recompensas.
+
+O piloto possui somente três falas: primeira operação industrial após concluir o tutorial, primeira carta **nova** descoberta além da carta inicial (ID 1 já existe no save novo) e primeira Ascensão. Cápsulas, missões e promoções compartilham o mesmo detector de primeira descoberta. A Ascensão só marca a fala após a transação de progresso. As falas são pendências persistentes, exibidas em ordem fixa quando tutorial, ganhos offline e transição de Ascensão não estão à frente. A recompensa de cartas usa um diálogo acima do painel narrativo; o painel aparece após seu fechamento. Dispensar grava a fala como vista. O painel não concede recursos.
+
+Room 15 adiciona `novaSeenMask` e `novaPendingMask`. Perfis existentes recebem o marcador de todas as três falas como vistas, pois o histórico antigo não distingue com segurança o que já aconteceu; saves novos começam sem marcadores. Backup 7 salva ambos. Backups 2–6 continuam aceitos e recebem os marcadores como vistos. Na restauração, falas já dispensadas localmente não são reativadas por um snapshot anterior. A Ascensão preserva ambos os marcadores.
+
+## Arte e voz
+
+`app/src/main/res/drawable-nodpi/img_nova_hologram.png` foi gerado originalmente para o projeto com a ferramenta de geração de imagem do Codex em 18/10/2026, a partir da direção aprovada: holograma ciano, violeta e magenta, silhueta legível e sorriso sutil. Não usa imagem de terceiros nem exige atribuição de terceiros. O PNG gerado, sem edição, foi copiado para o repositório.
+
+Não há dublagem aprovada nesta fase. `NovaLine.voiceResource` é opcional; sem ele, o texto e a acessibilidade permanecem funcionais. `GameAudio` já reserva canal independente para voz, com volume e silenciamento persistentes, sem exibir controles inativos. O botão **Ouvir** só aparecerá quando houver arquivo associado. Falas futuras: pt-BR, mono, WAV/OGG leve, volume normalizado sem clipping, idealmente até 8 segundos, nomes como `nova_primeira_industria_ptbr.ogg` em `res/raw/`. Registrar intérprete, licença, autorização de uso comercial e fonte antes de distribuir. A reprodução é iniciada apenas pelo jogador, interrompida ao dispensar, ao ir para segundo plano ou ao encerrar a Activity; nunca há duas falas simultâneas. Nenhuma API de voz é chamada durante o jogo.

@@ -234,6 +234,11 @@ fun MainAppContent(viewModel: GameViewModel) {
         return
     }
 
+    val novaEvent = com.example.data.NovaPilot.next(state).takeIf {
+        state.hasCompletedTutorial && offlineReport == null &&
+            ascendingFromCores < 0L && ascensionReward < 0L
+    }
+
     LaunchedEffect(state.nebulaCores, ascendingFromCores) {
         if (ascendingFromCores >= 0L && state.nebulaCores > ascendingFromCores) {
             ascensionReward = state.nebulaCores - ascendingFromCores
@@ -373,6 +378,11 @@ fun MainAppContent(viewModel: GameViewModel) {
                     onAscensionStarted = { ascendingFromCores = state.nebulaCores },
                     onAscensionFailed = { ascendingFromCores = -1L }
                 )
+                novaEvent?.let { event ->
+                    NovaCompanionPanel(NovaScript.forEvent(event),
+                        onDismiss = { viewModel.dismissNova(event) },
+                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp))
+                }
             }
         }
     } else {
@@ -457,6 +467,11 @@ fun MainAppContent(viewModel: GameViewModel) {
                     onAscensionStarted = { ascendingFromCores = state.nebulaCores },
                     onAscensionFailed = { ascendingFromCores = -1L }
                 )
+                novaEvent?.let { event ->
+                    NovaCompanionPanel(NovaScript.forEvent(event),
+                        onDismiss = { viewModel.dismissNova(event) },
+                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp))
+                }
             }
         }
     }

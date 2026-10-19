@@ -39,7 +39,9 @@ data class GameState(
     val scienceProdLevel: Int = 0,
     val scienceCreditsLevel: Int = 0,
     val scienceComradeLevel: Int = 0,
-    val scienceCombatLevel: Int = 0
+    val scienceCombatLevel: Int = 0,
+    @ColumnInfo(defaultValue = "7") val novaSeenMask: Int = 0,
+    @ColumnInfo(defaultValue = "0") val novaPendingMask: Int = 0
 )
 
 @Entity(tableName = "researchers")
@@ -307,11 +309,18 @@ interface GameDao {
         AdRewardReceipt::class,
         PlayPurchaseReceipt::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = false
 )
 abstract class GameDatabase : RoomDatabase() {
     companion object {
+        val MIGRATION_14_15 = object : androidx.room.migration.Migration(14, 15) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                // Existing profiles have already experienced unknown milestones. Never replay them.
+                db.execSQL("ALTER TABLE game_state ADD COLUMN novaSeenMask INTEGER NOT NULL DEFAULT 7")
+                db.execSQL("ALTER TABLE game_state ADD COLUMN novaPendingMask INTEGER NOT NULL DEFAULT 0")
+            }
+        }
         val MIGRATION_13_14 = object : androidx.room.migration.Migration(13, 14) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE buildings ADD COLUMN cycleStartedAtMs INTEGER NOT NULL DEFAULT 0")

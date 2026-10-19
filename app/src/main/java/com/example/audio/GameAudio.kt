@@ -3,6 +3,7 @@ package com.example.audio
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioManager
+import android.media.MediaPlayer
 import android.media.SoundPool
 import android.os.SystemClock
 import android.util.Log
@@ -55,6 +56,10 @@ class SoundPreferences(context: Context) {
     fun volume(): Int = prefs.getInt("effects_volume", 35).coerceIn(0, 100)
     fun setEnabled(value: Boolean) { prefs.edit().putBoolean("effects_enabled", value).apply() }
     fun setVolume(value: Int) { prefs.edit().putInt("effects_volume", value.coerceIn(0, 100)).apply() }
+    fun voiceEnabled(): Boolean = prefs.getBoolean("voice_enabled", true)
+    fun voiceVolume(): Int = prefs.getInt("voice_volume", 65).coerceIn(0, 100)
+    fun setVoiceEnabled(value: Boolean) { prefs.edit().putBoolean("voice_enabled", value).apply() }
+    fun setVoiceVolume(value: Int) { prefs.edit().putInt("voice_volume", value.coerceIn(0, 100)).apply() }
 }
 
 object SoundEventRouter {
@@ -65,6 +70,7 @@ object SoundEventRouter {
 
 /** One pool for the Activity lifetime. Missing/unloaded samples never block gameplay. */
 class GameAudio(context: Context) {
+    private val appContext = context.applicationContext
     private val settings = SoundPreferences(context)
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val gate = SoundGate()
@@ -79,6 +85,11 @@ class GameAudio(context: Context) {
     private var foreground = false
     private var closed = false
     private var lastPreviewAt = 0L
+    private var voicePlayer: MediaPlayer? = null
+    var voiceEnabled by mutableStateOf(settings.voiceEnabled())
+        private set
+    var voiceVolume by mutableIntStateOf(settings.voiceVolume())
+        private set
 
     var enabled by mutableStateOf(settings.enabled())
         private set
@@ -112,7 +123,7 @@ class GameAudio(context: Context) {
 
     fun setForeground(active: Boolean) {
         foreground = active
-        if (!active) stopPlaying()
+        if (!active) { stopPlaying(); stopVoice() }
     }
 
     fun updateEnabled(value: Boolean) {
@@ -124,6 +135,45 @@ class GameAudio(context: Context) {
     fun updateVolume(value: Int) {
         volume = value.coerceIn(0, 100)
         settings.setVolume(volume)
+    }
+
+    fun updateVoiceEnabled(value: Boolean) {
+        voiceEnabled = value
+        settings.setVoiceEnabled(value)
+        if (!value) stopVoice()
+    }
+
+    fun updateVoiceVolume(value: Int) {
+        voiceVolume = value.coerceIn(0, 100)
+        settings.setVoiceVolume(voiceVolume)
+        voicePlayer?.setVolume(voiceVolume / 100f, voiceVolume / 100f)
+    }
+
+    /** Future approved narration; a missing resource leaves the on-screen caption untouched. */
+    fun playVoice(resource: Int?): Boolean {
+        if (resource == null || closed || !foreground || !voiceEnabled || voiceVolume == 0 ||
+            audioManager.mode != AudioManager.MODE_NORMAL) return false
+        stopVoice()
+        return try {
+            val player = MediaPlayer.create(appContext, resource) ?: return false
+            voicePlayer = player
+            player.setVolume(voiceVolume / 100f, voiceVolume / 100f)
+            player.setOnCompletionListener { stopVoice() }
+            player.setOnErrorListener { _, _, _ -> stopVoice(); true }
+            player.start()
+            true
+        } catch (e: Exception) {
+            Log.w("GameAudio", "Voice playback failed", e)
+            stopVoice()
+            false
+        }
+    }
+
+    fun stopVoice() {
+        voicePlayer?.let { player ->
+            voicePlayer = null
+            player.release()
+        }
     }
 
     fun preview() {
@@ -159,6 +209,7 @@ class GameAudio(context: Context) {
         closed = true
         foreground = false
         stopPlaying()
+        stopVoice()
         pool.setOnLoadCompleteListener(null)
         pool.release()
         loaded.clear()

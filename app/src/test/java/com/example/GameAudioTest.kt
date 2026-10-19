@@ -44,5 +44,9 @@ class GameAudioTest {
         assertEquals(63, restored.volume())
         restored.setVolume(150)
         assertEquals(100, SoundPreferences(context).volume())
+        first.setVoiceEnabled(false)
+        first.setVoiceVolume(28)
+        assertFalse(SoundPreferences(context).voiceEnabled())
+        assertEquals(28, SoundPreferences(context).voiceVolume())
     }
 }

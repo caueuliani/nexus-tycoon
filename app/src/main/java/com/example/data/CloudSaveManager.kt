@@ -242,7 +242,9 @@ class CloudSaveManager(private val context: Context) {
 
             // Map data structure
             return mapOf(
-                "backupVersion" to 6,
+                "backupVersion" to 7,
+                "novaSeenMask" to state.novaSeenMask,
+                "novaPendingMask" to state.novaPendingMask,
                 "adReceipts" to snapshot.adReceipts.map { mapOf("token" to it.token, "rewardedAt" to it.rewardedAt) },
                 "companyName" to state.companyName,
                 "cash" to state.cash,
@@ -316,7 +318,7 @@ class CloudSaveManager(private val context: Context) {
     suspend fun restoreFromPayload(repository: GameRepository, payload: Map<String, Any>) {
         BackupValidation.payload(payload)
         val version = (payload["backupVersion"] as Number).toInt()
-        require(version in 2..6) {
+        require(version in 2..7) {
             "Backup antigo ou incompatível. Gere um novo backup no dispositivo de origem; o progresso local foi preservado."
         }
         require(listOf("resources", "buildings", "combatUnits", "researchers", "missions").all {
@@ -331,6 +333,8 @@ class CloudSaveManager(private val context: Context) {
             require(payload["claimedCoreEvents"] is String) { "Resgates de eventos ausentes." }
         }
         val state = GameState(
+            novaSeenMask = if (version >= 7) (payload["novaSeenMask"] as Number).toInt() else NovaPilot.ALL,
+            novaPendingMask = if (version >= 7) (payload["novaPendingMask"] as Number).toInt() else 0,
             availableCores = if (version == 2) (payload["nebulaCores"] as? Number)?.toLong() ?: 0L else (payload["availableCores"] as Number).toLong(),
             industrialEngineeringLevel = if (version == 2) 0 else (payload["industrialEngineeringLevel"] as Number).toInt(),
             tacticalLogisticsLevel = if (version == 2) 0 else (payload["tacticalLogisticsLevel"] as Number).toInt(),

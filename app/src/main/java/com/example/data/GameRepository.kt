@@ -53,6 +53,11 @@ class GameRepository(private val db: GameDatabase) {
 
     suspend fun getGameStateDirect(): GameState? = dao.getGameStateDirect()
 
+    suspend fun acknowledgeNova(event: Int) = db.withTransaction {
+        val current = dao.getGameStateDirect() ?: return@withTransaction
+        saveValidatedState(NovaPilot.acknowledge(current, event))
+    }
+
     suspend fun checkAndInitialize() = db.withTransaction {
         val state = dao.getGameStateDirect()
         val buildingsList = dao.getBuildingsDirect()
@@ -552,7 +557,8 @@ class GameRepository(private val db: GameDatabase) {
         if (state.cash < minCashRequired) return@withTransaction false
         
         val earnedCores = kotlin.math.floor(kotlin.math.sqrt(state.cash / minCashRequired)).toLong()
-        saveValidatedState(resetRankForNewRun(StellarLab.grant(state, earnedCores)).copy(
+        saveValidatedState(resetRankForNewRun(NovaPilot.queue(StellarLab.grant(state, earnedCores),
+            NovaPilot.FIRST_ASCENSION)).copy(
             cash = 5000.0,
             lastSavedTime = maxOf(state.lastSavedTime, System.currentTimeMillis())
         ))
@@ -763,6 +769,10 @@ class GameRepository(private val db: GameDatabase) {
         BackupValidation.snapshot(state, resources, buildings, combatUnits, researchers, missions)
         require(adReceipts.all { it.token.isNotBlank() && it.rewardedAt >= 0 })
         require(adReceipts.map { it.token }.distinct().size == adReceipts.size)
+        // A restored snapshot cannot make a line already dismissed on this device play again.
+        val seenNova = state.novaSeenMask or (dao.getGameStateDirect()?.novaSeenMask ?: 0)
+        val restoredState = state.copy(novaSeenMask = seenNova,
+            novaPendingMask = state.novaPendingMask and seenNova.inv())
         adReceipts.forEach { dao.insertAdReward(it) } // Union: never forget an already-paid local callback.
         dao.abandonBattles()
         dao.clearResources()
@@ -770,8 +780,8 @@ class GameRepository(private val db: GameDatabase) {
         dao.clearCombatUnits()
         dao.clearResearchers()
         dao.clearMissions()
-        saveValidatedState(if (com.example.BuildConfig.DEBUG) state else
-            withoutUnverifiedReleaseEntitlements(state, restoredFromBackup = true))
+        saveValidatedState(if (com.example.BuildConfig.DEBUG) restoredState else
+            withoutUnverifiedReleaseEntitlements(restoredState, restoredFromBackup = true))
         dao.saveResources(resources)
         dao.saveBuildings(buildings)
         dao.saveCombatUnits(combatUnits)
@@ -833,7 +843,8 @@ class GameRepository(private val db: GameDatabase) {
                     context.applicationContext, GameDatabase::class.java, "nexus_tycoon.db"
                 ).addMigrations(GameDatabase.MIGRATION_8_9, GameDatabase.MIGRATION_9_10,
                     GameDatabase.MIGRATION_10_11, GameDatabase.MIGRATION_11_12,
-                    GameDatabase.MIGRATION_12_13, GameDatabase.MIGRATION_13_14).build()
+                    GameDatabase.MIGRATION_12_13, GameDatabase.MIGRATION_13_14,
+                    GameDatabase.MIGRATION_14_15).build()
                 val repo = GameRepository(db)
                 INSTANCE = repo
                 repo

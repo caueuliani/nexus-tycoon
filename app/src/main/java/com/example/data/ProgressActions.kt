@@ -66,7 +66,7 @@ suspend fun GameRepository.completeTutorial() {
     val notifications = mutableListOf<() -> Unit>()
     runProgressTransaction {
         val current = getGameStateDirect() ?: return@runProgressTransaction
-        saveGameState(current.copy(hasCompletedTutorial = true))
+        saveGameState(NovaPilot.queue(current.copy(hasCompletedTutorial = true), NovaPilot.FIRST_INDUSTRY))
     }
     notifications.forEach { it() }
 }
@@ -112,7 +112,9 @@ suspend fun GameRepository.buyAndOpenCapsuleWithGems(type: String, onSuccess: (L
 
         val grant = ResearcherRewards.roll(scientists, cardsNumber, type)
         saveResearchers(grant.researchers)
-        saveGameState(current.copy(
+        val updatedState = if (NovaPilot.firstResearcherAcquired(scientists, grant.researchers))
+            NovaPilot.queue(current, NovaPilot.FIRST_RESEARCHER) else current
+        saveGameState(updatedState.copy(
         starGems = current.starGems - cost,
         science = Math.addExact(current.science, scienceGain.toLong())
         ))
@@ -184,7 +186,9 @@ suspend fun GameRepository.claimMissionReward(missionId: Int, onSuccess: (Long, 
 
         val nextCompleted = (freshState.completedRankMissions + 1)
             .coerceAtMost(missionLimitForRank(freshState.playerRank))
-        saveGameState(freshState.copy(
+        val updatedState = if (NovaPilot.firstResearcherAcquired(scientists, grant.researchers))
+            NovaPilot.queue(freshState, NovaPilot.FIRST_RESEARCHER) else freshState
+        saveGameState(updatedState.copy(
         starGems = Math.addExact(freshState.starGems, gemsReward.toLong()),
         science = Math.addExact(freshState.science, scienceReward.toLong()),
         completedRankMissions = nextCompleted
@@ -213,7 +217,9 @@ suspend fun GameRepository.rankUpPlayer(onSuccess: (Int, Long, List<String>) -> 
         val grant = ResearcherRewards.promotion(scientists)
         saveResearchers(grant.researchers)
 
-        saveGameState(freshState.copy(
+        val updatedState = if (NovaPilot.firstResearcherAcquired(scientists, grant.researchers))
+            NovaPilot.queue(freshState, NovaPilot.FIRST_RESEARCHER) else freshState
+        saveGameState(updatedState.copy(
         playerRank = nextRank,
         completedRankMissions = 0,
         starGems = Math.addExact(freshState.starGems, rewardGemsGain.toLong()),
