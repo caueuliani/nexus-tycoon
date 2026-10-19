@@ -4797,6 +4797,21 @@ fun ProfileDialog(
                     onValueChangeFinished = { audio.preview() },
                     modifier = Modifier.semantics { contentDescription = "Volume dos efeitos sonoros" })
 
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Vozes", color = SolarGold, fontWeight = FontWeight.Bold)
+                    Switch(checked = audio.voiceEnabled, onCheckedChange = { audio.updateVoiceEnabled(it) },
+                        modifier = Modifier.semantics { contentDescription = "Ativar vozes" })
+                }
+                Text("Volume das vozes: ${audio.voiceVolume}%", color = TextWhite,
+                    style = MaterialTheme.typography.bodySmall)
+                Slider(value = audio.voiceVolume.toFloat(),
+                    onValueChange = { audio.updateVoiceVolume(it.toInt()) },
+                    valueRange = 0f..100f, enabled = audio.voiceEnabled,
+                    modifier = Modifier.semantics { contentDescription = "Volume das vozes" })
+                Text("As falas dubladas da N.O.V.A. ainda não estão incluídas; as legendas continuam disponíveis.",
+                    color = TextMuted, style = MaterialTheme.typography.bodySmall)
+
                 // Section: Google Sync
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.CloudSync, contentDescription = null, tint = SolarGold, modifier = Modifier.size(20.dp))

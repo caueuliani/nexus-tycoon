@@ -7,7 +7,9 @@ plugins {
   id("com.google.gms.google-services") version "4.4.4" apply false
 }
 
-val hasFirebaseConfig = file("google-services.json").isFile
+// Opt-in, separate debug package for first-run QA. It cannot access the player's Room data or cloud.
+val isolatedNovaQa = providers.gradleProperty("NOVA_ISOLATED_QA").orElse("false").get().toBoolean()
+val hasFirebaseConfig = file("google-services.json").isFile && !isolatedNovaQa
 if (hasFirebaseConfig) apply(plugin = "com.google.gms.google-services")
 val productionRewardedAdUnit = providers.gradleProperty("ADMOB_REWARDED_AD_UNIT_ID").orElse("ca-app-pub-1910491454764587/7433492171").get()
 // IDs must match products created by the account owner in Play Console; blank keeps checkout off.
@@ -51,6 +53,7 @@ android {
 
   buildTypes {
     debug {
+      if (isolatedNovaQa) applicationIdSuffix = ".novaqa"
       manifestPlaceholders["admobAppId"] = "ca-app-pub-3940256099942544~3347511713"
       buildConfigField("String", "ADMOB_APP_ID", "\"ca-app-pub-3940256099942544~3347511713\"")
       buildConfigField("String", "REWARDED_AD_UNIT_ID", "\"ca-app-pub-3940256099942544/5224354917\"")
