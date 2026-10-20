@@ -114,11 +114,20 @@ class CombatRewardsTest {
                 it.execSQL("DROP TABLE combat_battles")
                 it.execSQL("DROP TABLE play_purchase_receipts")
                 it.execSQL("ALTER TABLE game_state DROP COLUMN autoSellLicenseSource")
+                it.execSQL("ALTER TABLE game_state DROP COLUMN novaSeenMask")
+                it.execSQL("ALTER TABLE game_state DROP COLUMN novaPendingMask")
+                listOf("cycleStartedAtMs", "cycleEndsAtMs", "cycleOutput", "cycleSalePrice").forEach { column ->
+                    it.execSQL("ALTER TABLE buildings DROP COLUMN `$column`")
+                }
                 it.version=10
             }
             fun open()=Room.databaseBuilder(context,GameDatabase::class.java,name).addMigrations(
-                GameDatabase.MIGRATION_10_11, GameDatabase.MIGRATION_11_12, GameDatabase.MIGRATION_12_13).build()
-            db=open();repo=GameRepository(db);assertEquals(saved,repo.exportBackup())
+                GameDatabase.MIGRATION_10_11, GameDatabase.MIGRATION_11_12, GameDatabase.MIGRATION_12_13,
+                GameDatabase.MIGRATION_13_14, GameDatabase.MIGRATION_14_15).build()
+            db=open();repo=GameRepository(db)
+            assertEquals(saved.copy(state = saved.state.copy(
+                lastSavedTime = repo.getGameStateDirect()!!.lastSavedTime,
+                novaSeenMask = NovaPilot.ALL)), repo.exportBackup())
             val ticket=repo.beginCombat(1)!!;assertEquals(11,ticket.enemyLevel)
             db.close();db=open();repo=GameRepository(db)
             assertEquals(ticket.reward(),repo.completeCombat(ticket.id,true))

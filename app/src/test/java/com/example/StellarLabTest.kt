@@ -92,12 +92,13 @@ class StellarLabTest {
             try {
                 val repo = GameRepository(db); repo.checkAndInitialize()
                 db.gameDao.saveGameState(repo.getGameStateDirect()!!.copy(isSubscribed = vip, nebulaCores = StellarUpgrade.OFFLINE.costs.sum(), availableCores = 0, offlineReserveLevel = 4, lastSavedTime = System.currentTimeMillis() - 24 * 3600000L))
-                val report = repo.processOfflineDifference()!!
+                val now = System.currentTimeMillis()
+                val report = repo.processOfflineDifference(now)!!
                 val seconds = (if (vip) 16 else 12) * 3600L
                 assertEquals(seconds, report.offlineSeconds)
                 assertEquals(2.0 * seconds * (if (vip) 1.5 else 1.0) * (1.0 + StellarUpgrade.OFFLINE.costs.sum() * 0.10), report.resourcesEarned["Energy Cell"]!!, 1e-6)
                 val inventory = repo.getResourcesDirect()
-                assertNull(repo.processOfflineDifference())
+                assertNull(repo.processOfflineDifference(now))
                 assertEquals(inventory, repo.getResourcesDirect())
             } finally { db.close() }
         }
@@ -116,13 +117,21 @@ class StellarLabTest {
                 raw.execSQL("DROP TABLE combat_battles")
                 raw.execSQL("DROP TABLE play_purchase_receipts")
                 raw.execSQL("ALTER TABLE game_state DROP COLUMN autoSellLicenseSource")
+                raw.execSQL("ALTER TABLE game_state DROP COLUMN novaSeenMask")
+                raw.execSQL("ALTER TABLE game_state DROP COLUMN novaPendingMask")
+                listOf("cycleStartedAtMs", "cycleEndsAtMs", "cycleOutput", "cycleSalePrice").forEach { column ->
+                    raw.execSQL("ALTER TABLE buildings DROP COLUMN `$column`")
+                }
                 raw.version = 9
             }
             fun reopen() = Room.databaseBuilder(context, GameDatabase::class.java, name).addMigrations(
                 GameDatabase.MIGRATION_9_10, GameDatabase.MIGRATION_10_11,
-                GameDatabase.MIGRATION_11_12, GameDatabase.MIGRATION_12_13).build()
+                GameDatabase.MIGRATION_11_12, GameDatabase.MIGRATION_12_13,
+                GameDatabase.MIGRATION_13_14, GameDatabase.MIGRATION_14_15).build()
             db = reopen(); repo = GameRepository(db)
-            assertEquals(old.copy(state = old.state.copy(availableCores = 77)), repo.exportBackup())
+            assertEquals(old.copy(state = old.state.copy(availableCores = 77,
+                lastSavedTime = repo.getGameStateDirect()!!.lastSavedTime,
+                novaSeenMask = NovaPilot.ALL)), repo.exportBackup())
             assertTrue(repo.buyStellarUpgrade(StellarUpgrade.OFFLINE, 0))
             db.close(); db = reopen(); repo = GameRepository(db); repo.checkAndInitialize()
             assertEquals(67L, repo.getGameStateDirect()!!.availableCores)
@@ -140,7 +149,7 @@ class StellarLabTest {
             val snapshot = repo.exportBackup()
             val cloud = CloudSaveManager(context)
             val payload = cloud.createBackupPayload(snapshot)
-            assertEquals(5, payload["backupVersion"])
+            assertEquals(7, payload["backupVersion"])
             cloud.restoreFromPayload(repo, payload)
             assertEquals(snapshot.state.copy(lastSavedTime = repo.getGameStateDirect()!!.lastSavedTime), repo.getGameStateDirect())
             assertFalse(repo.claimCoreEvent("Energy Supplier", true))

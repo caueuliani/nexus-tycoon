@@ -45,13 +45,14 @@ class GameplayBalanceTest {
             repo.checkAndInitialize()
             repo.saveGameState(repo.getGameStateDirect()!!.copy(
                 scienceComradeLevel = 2,
-                lastSavedTime = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+                lastSavedTime = 1000L
             ))
-            repo.processOfflineDifference()
+            val now = 1000L + 24 * 60 * 60 * 1000L
+            repo.processOfflineDifference(now)
             val after = repo.exportBackup()
             assertEquals(28800 * 1.4, after.state.comrades, 0.001)
             assertEquals(100.0 + 28800 * 2, after.resources.first { it.name == "Energy Cell" }.quantity, 0.001)
-            assertNull(repo.processOfflineDifference())
+            assertNull(repo.processOfflineDifference(now))
             assertEquals(after.resources, repo.getResourcesDirect())
             assertEquals(after.state.comrades, repo.getGameStateDirect()!!.comrades, 0.0)
         } finally { db.close() }
@@ -109,7 +110,9 @@ class GameplayBalanceTest {
             val ascended = source.exportBackup()
             assertEquals(1, ascended.state.playerRank)
             assertEquals(0, ascended.state.completedRankMissions)
-            assertEquals(initialRankMissions(), ascended.missions)
+            assertEquals(initialRankMissions().mapIndexed { index, mission ->
+                mission.copy(id = index + 4)
+            }, ascended.missions)
             assertEquals(80L, ascended.state.starGems)
             assertEquals(230L, ascended.state.science)
             assertEquals(12L, ascended.state.nebulaCores)

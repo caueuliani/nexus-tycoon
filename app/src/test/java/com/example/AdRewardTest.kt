@@ -64,23 +64,30 @@ class AdRewardTest {
                 old.execSQL("DROP TABLE ad_reward_receipts")
                 old.execSQL("DROP TABLE play_purchase_receipts")
                 listOf("availableCores", "industrialEngineeringLevel", "tacticalLogisticsLevel", "offlineReserveLevel",
-                    "claimedCoreEvents", "autoSellLicenseSource").forEach {
+                    "claimedCoreEvents", "autoSellLicenseSource", "novaSeenMask", "novaPendingMask").forEach {
                     old.execSQL("ALTER TABLE game_state DROP COLUMN `$it`")
+                }
+                listOf("cycleStartedAtMs", "cycleEndsAtMs", "cycleOutput", "cycleSalePrice").forEach {
+                    old.execSQL("ALTER TABLE buildings DROP COLUMN `$it`")
                 }
                 old.version = 8
             }
             db = Room.databaseBuilder(context, GameDatabase::class.java, name)
                 .addMigrations(GameDatabase.MIGRATION_8_9, GameDatabase.MIGRATION_9_10,
                     GameDatabase.MIGRATION_10_11, GameDatabase.MIGRATION_11_12,
-                    GameDatabase.MIGRATION_12_13).build()
+                    GameDatabase.MIGRATION_12_13, GameDatabase.MIGRATION_13_14,
+                    GameDatabase.MIGRATION_14_15).build()
             repo = GameRepository(db)
-            assertEquals(before, repo.exportBackup())
+            assertEquals(before.copy(state = before.state.copy(
+                lastSavedTime = repo.getGameStateDirect()!!.lastSavedTime,
+                novaSeenMask = NovaPilot.ALL)), repo.exportBackup())
             assertTrue(repo.grantAdReward("persisted-ad"))
             db.close()
             db = Room.databaseBuilder(context, GameDatabase::class.java, name)
                 .addMigrations(GameDatabase.MIGRATION_8_9, GameDatabase.MIGRATION_9_10,
                     GameDatabase.MIGRATION_10_11, GameDatabase.MIGRATION_11_12,
-                    GameDatabase.MIGRATION_12_13).build()
+                    GameDatabase.MIGRATION_12_13, GameDatabase.MIGRATION_13_14,
+                    GameDatabase.MIGRATION_14_15).build()
             repo = GameRepository(db)
             assertFalse(repo.grantAdReward("persisted-ad"))
             assertEquals(128L, repo.getGameStateDirect()!!.starGems)

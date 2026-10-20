@@ -173,14 +173,27 @@ class ProgressIntegrityTest {
             val buildings = original.buildings.map { it.copy(level = if (it.id == 1) 1 else 8, isAutomated = true, isAutoSelling = true) }
             val researchers = original.researchers.map { it.copy(level = 2) }
             repo.restoreBackup(state, original.resources, buildings, original.combatUnits, researchers, original.missions)
-            var resources = original.resources; var cash = 0.0; var workers = 0.0
+            var resources = original.resources
+            var onlineBuildings = buildings
+            var cash = 0.0
+            var workers = 0.0
             repeat(120) {
-                val tick = ProductionEngine.step(state, buildings, resources, researchers)
-                resources = tick.resources; cash += tick.cash; workers += tick.comrades
+                val tick = ProductionCycles.advance(state, onlineBuildings, resources, researchers,
+                    1000L + it * 1000L, 2000L + it * 1000L)
+                resources = tick.resources
+                onlineBuildings = tick.buildings
+                cash += tick.cash
+                workers += tick.comrades
             }
             val report = repo.processOfflineDifference(121000)!!
             assertEquals(120L, report.offlineSeconds)
-            assertEquals(resources, repo.getResourcesDirect())
+            val offlineResources = repo.getResourcesDirect()
+            assertEquals(resources.size, offlineResources.size)
+            resources.zip(offlineResources).forEach { (expected, actual) ->
+                assertEquals(expected.name, actual.name)
+                assertEquals(expected.quantity, actual.quantity, 1e-7)
+            }
+            assertEquals(onlineBuildings, repo.getBuildingsDirect())
             assertEquals(state.cash + cash, repo.getGameStateDirect()!!.cash, 1e-7)
             assertEquals(state.comrades + workers, repo.getGameStateDirect()!!.comrades, 1e-7)
             val after = repo.exportBackup()
