@@ -36,6 +36,7 @@ android {
     buildConfigField("String", "PLAY_VIP_SUBSCRIPTION_ID", "\"$vipProductId\"")
     buildConfigField("String", "PLAY_AUTOSELL_PRODUCT_ID", "\"$autoSellProductId\"")
     buildConfigField("String", "PLAY_PURCHASE_VERIFICATION_URL", "\"$purchaseVerificationUrl\"")
+    buildConfigField("boolean", "ITCH_BETA", "false")
     if (!hasFirebaseConfig) resValue("string", "default_web_client_id", "")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -67,6 +68,18 @@ android {
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
     }
+    create("itchBeta") {
+      initWith(getByName("release"))
+      isDebuggable = false
+      versionNameSuffix = "-itch-beta.1"
+      buildConfigField("boolean", "ITCH_BETA", "true")
+      buildConfigField("String", "ADMOB_APP_ID", "\"\"")
+      buildConfigField("String", "REWARDED_AD_UNIT_ID", "\"\"")
+      buildConfigField("String", "PLAY_VIP_SUBSCRIPTION_ID", "\"\"")
+      buildConfigField("String", "PLAY_AUTOSELL_PRODUCT_ID", "\"\"")
+      buildConfigField("String", "PLAY_PURCHASE_VERIFICATION_URL", "\"\"")
+      manifestPlaceholders["admobAppId"] = ""
+    }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
@@ -78,6 +91,15 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
+}
+
+// Custom release-derived builds need their local unit-test component enabled explicitly.
+androidComponents {
+  beforeVariants(selector().withBuildType("itchBeta")) { variant ->
+    variant.hostTests.values.filter {
+      it.type == com.android.build.api.variant.HostTestBuilder.UNIT_TEST_TYPE
+    }.forEach { it.enable = true }
+  }
 }
 
 // Android 16's Robolectric runtime requires Java 21, even when compilation uses JDK 17.

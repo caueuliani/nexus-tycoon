@@ -61,15 +61,21 @@ private fun formatCycleSeconds(milliseconds: Long): String =
 
 class MainActivity : ComponentActivity() {
     private val gameAudio by lazy { GameAudio(this) }
-    val rewardedAds by lazy { com.example.ads.RewardedAdsController(this) }
-    val playBilling by lazy { com.example.billing.PlayBillingController(this) }
+    val rewardedAds by lazy {
+        check(!BuildConfig.ITCH_BETA) { "Ads are disabled in itchBeta" }
+        com.example.ads.RewardedAdsController(this)
+    }
+    val playBilling by lazy {
+        check(!BuildConfig.ITCH_BETA) { "Billing is disabled in itchBeta" }
+        com.example.billing.PlayBillingController(this)
+    }
     override fun onResume() {
         super.onResume()
-        playBilling.onResume()
+        if (!BuildConfig.ITCH_BETA) playBilling.onResume()
     }
     override fun onDestroy() {
         gameAudio.close()
-        playBilling.close()
+        if (!BuildConfig.ITCH_BETA) playBilling.close()
         super.onDestroy()
     }
     override fun onStart() {
@@ -352,8 +358,8 @@ fun MainAppContent(viewModel: GameViewModel) {
                 NavigationRailItem(
                     selected = activeTab == 6,
                     onClick = { navigate(6) },
-                    icon = { Icon(Icons.Filled.ShoppingBag, contentDescription = "Premium") },
-                    label = { Text("Premium", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                    icon = { Icon(Icons.Filled.ShoppingBag, contentDescription = "Loja") },
+                    label = { Text(if (BuildConfig.ITCH_BETA) "Loja" else "Premium", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
                     modifier = Modifier.testTag("nav_premium_pc")
                 )
                 Spacer(modifier = Modifier.weight(1f))
@@ -445,7 +451,7 @@ fun MainAppContent(viewModel: GameViewModel) {
                         selected = activeTab == 6,
                         onClick = { navigate(6) },
                         icon = { Icon(Icons.Filled.ShoppingBag, contentDescription = null) },
-                        label = { Text("Premium", fontSize = 9.sp, maxLines = 1) },
+                        label = { Text(if (BuildConfig.ITCH_BETA) "Loja" else "Premium", fontSize = 9.sp, maxLines = 1) },
                         alwaysShowLabel = false,
                         modifier = Modifier.testTag("nav_premium")
                     )
@@ -537,13 +543,14 @@ fun IndustryTab(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.Stars, contentDescription = null, tint = SolarGold, modifier = Modifier.size(24.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Módulo Comercial Premium 🛰️", fontWeight = FontWeight.Bold, color = SolarGold, fontSize = 18.sp)
+                    Text(if (BuildConfig.ITCH_BETA) "Auto-venda" else "Módulo Comercial Premium 🛰️", fontWeight = FontWeight.Bold, color = SolarGold, fontSize = 18.sp)
                 }
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "A funcionalidade de Auto-venda automática é um recurso premium exclusivo!",
+                        if (BuildConfig.ITCH_BETA) "Desbloqueie a auto-venda na Loja por 300 diamantes do jogo."
+                        else "A funcionalidade de Auto-venda automática é um recurso premium exclusivo!",
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextWhite
@@ -553,16 +560,18 @@ fun IndustryTab(
                         style = MaterialTheme.typography.bodySmall,
                         color = TextMuted
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        "Benefícios inclusos:\n• Conversão automática direta 1:1 com base no preço atual de mercado\n• Geração de créditos idle em segundo plano e progresso offline\n• Demonstração gratuita no debug; pagamento real ainda indisponível",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextWhite
-                    )
+                    if (!BuildConfig.ITCH_BETA) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "Benefícios inclusos:\n• Conversão automática direta 1:1 com base no preço atual de mercado\n• Geração de créditos idle em segundo plano e progresso offline\n• Demonstração gratuita no debug; pagamento real ainda indisponível",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextWhite
+                        )
+                    }
                 }
             },
             confirmButton = {
-                Button(
+                if (!BuildConfig.ITCH_BETA) Button(
                     onClick = {
                         viewModel.buyAutoSellLicense()
                         showAutoSellDialog = false
@@ -2383,7 +2392,9 @@ fun BuildingProductionCard(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (hasAutoSellLicense) "Auto-venda (Conversão direta em C\$)" else "Auto-venda (★ Premium VIP)",
+                                text = if (hasAutoSellLicense) "Auto-venda (Conversão direta em C\$)"
+                                    else if (BuildConfig.ITCH_BETA) "Auto-venda (300 diamantes na Loja)"
+                                    else "Auto-venda (★ Premium VIP)",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = if (building.isAutoSelling && hasAutoSellLicense) SuccessGreen else if (hasAutoSellLicense) TextWhite else SolarGold,
@@ -3846,7 +3857,8 @@ fun ShopAndEventTab(
     state: GameState
 ) {
     val event by viewModel.seasonalChampionship.collectAsStateWithLifecycle()
-    val billing = (androidx.activity.compose.LocalActivity.current as? MainActivity)?.playBilling
+    val billing = if (BuildConfig.ITCH_BETA) null
+        else (androidx.activity.compose.LocalActivity.current as? MainActivity)?.playBilling
     val purchaseStates = billing?.state?.collectAsStateWithLifecycle()?.value.orEmpty()
     val vipPurchase = purchaseStates[com.example.billing.PlayProduct.VIP]
     val licensePurchase = purchaseStates[com.example.billing.PlayProduct.AUTO_SELL]
@@ -3860,7 +3872,7 @@ fun ShopAndEventTab(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        RewardedAdsCard()
+        if (!BuildConfig.ITCH_BETA) RewardedAdsCard()
         // Seasonal Event Section
         NexusPanel(
             accent = SolarGold,
@@ -3935,12 +3947,14 @@ fun ShopAndEventTab(
             }
         }
 
-        Text("Loja Estelar & Assinaturas Premium", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Text("Compras em dinheiro real exigem produtos na Play Console e verificação no servidor. Trocas por créditos e gemas são do jogo.",
+        Text(if (BuildConfig.ITCH_BETA) "Loja Estelar" else "Loja Estelar & Assinaturas Premium",
+            style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(if (BuildConfig.ITCH_BETA) "Trocas gratuitas com créditos e gemas conquistados no jogo."
+            else "Compras em dinheiro real exigem produtos na Play Console e verificação no servidor. Trocas por créditos e gemas são do jogo.",
             fontSize = 12.sp, color = TextMuted)
 
         // VIP Subscription purchase
-        NexusPanel(
+        if (!BuildConfig.ITCH_BETA) NexusPanel(
             accent = SolarGold,
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -4001,7 +4015,8 @@ fun ShopAndEventTab(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Módulos: Auto-venda Comercial (Licença)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text(if (BuildConfig.ITCH_BETA) "Auto-venda • desbloqueio com gemas"
+                        else "Módulos: Auto-venda Comercial (Licença)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     if (state.hasAutoSellLicense) {
                         Badge(containerColor = SuccessGreen) { Text("Adquirido", modifier = Modifier.padding(4.dp)) }
                     }
@@ -4014,7 +4029,7 @@ fun ShopAndEventTab(
                 )
                 Spacer(modifier = Modifier.height(14.dp))
                 if (!state.hasAutoSellLicense) {
-                    Button(
+                    if (!BuildConfig.ITCH_BETA) Button(
                         onClick = { viewModel.buyAutoSellLicense() },
                         enabled = BuildConfig.DEBUG,
                         colors = ButtonDefaults.buttonColors(containerColor = SolarGold, contentColor = Color.Black),
@@ -4023,7 +4038,7 @@ fun ShopAndEventTab(
                     ) {
                         Text(if (BuildConfig.DEBUG) "Ativar licença de demonstração" else "Compras indisponíveis", fontWeight = FontWeight.Black)
                     }
-                    if (!BuildConfig.DEBUG) {
+                    if (!BuildConfig.DEBUG && !BuildConfig.ITCH_BETA) {
                         Button(onClick = { billing?.buy(com.example.billing.PlayProduct.AUTO_SELL) },
                             enabled = licensePurchase?.phase == com.example.billing.PurchasePhase.AVAILABLE,
                             modifier = Modifier.fillMaxWidth()) {
@@ -4396,7 +4411,9 @@ fun OfflineEarningsDialog(
                             )
                             Badge(containerColor = if (isSubscribed) SolarGold else MaterialTheme.colorScheme.secondary) {
                                 Text(
-                                    if (isSubscribed) "Premium VIP (Máx: ${offlineHours}h)" else "Jogador Comum (Máx: ${offlineHours}h)",
+                                    if (isSubscribed) "Premium VIP (Máx: ${offlineHours}h)"
+                                    else if (BuildConfig.ITCH_BETA) "Limite: ${offlineHours}h"
+                                    else "Jogador Comum (Máx: ${offlineHours}h)",
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (isSubscribed) Color.Black else TextWhite,
@@ -4414,7 +4431,8 @@ fun OfflineEarningsDialog(
                         if (!isSubscribed && report.offlineSeconds >= offlineHours * 3600L) {
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "💡 Dica: Seu tempo offline atingiu o limite de $offlineHours horas. Vire VIP na Loja para expandir seu limite para ${offlineHours + 4} horas!",
+                                text = if (BuildConfig.ITCH_BETA) "Seu tempo offline atingiu o limite de $offlineHours horas."
+                                    else "💡 Dica: Seu tempo offline atingiu o limite de $offlineHours horas. Vire VIP na Loja para expandir seu limite para ${offlineHours + 4} horas!",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = SolarGold,
                                 fontSize = 10.sp
