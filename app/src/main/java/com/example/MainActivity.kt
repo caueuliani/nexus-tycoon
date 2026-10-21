@@ -1117,7 +1117,6 @@ fun ResearchersLabDialog(
                     CapsuleShopItem(
                         title = "Comum 🎁",
                         cost = 50,
-                        imageResId = R.drawable.img_capsule_comum,
                         glowColor = NeonCyan,
                         onBuy = {
                             viewModel.buyAndOpenCapsuleWithGems("COMUM", onSuccess = { sci, cards ->
@@ -1135,7 +1134,6 @@ fun ResearchersLabDialog(
                     CapsuleShopItem(
                         title = "Épica ⭐",
                         cost = 150,
-                        imageResId = R.drawable.img_capsule_epica,
                         glowColor = NeonMagenta,
                         onBuy = {
                             viewModel.buyAndOpenCapsuleWithGems("EPICA", onSuccess = { sci, cards ->
@@ -1153,7 +1151,6 @@ fun ResearchersLabDialog(
                     CapsuleShopItem(
                         title = "Suprema 👑",
                         cost = 400,
-                        imageResId = R.drawable.img_capsule_suprema,
                         glowColor = SolarGold,
                         onBuy = {
                             viewModel.buyAndOpenCapsuleWithGems("SUPREMA", onSuccess = { sci, cards ->
@@ -1460,7 +1457,6 @@ fun SafeImage(
 fun CapsuleShopItem(
     title: String,
     cost: Int,
-    imageResId: Int,
     glowColor: Color,
     onBuy: () -> Unit
 ) {
@@ -1495,13 +1491,11 @@ fun CapsuleShopItem(
                     .border(1.5.dp, glowColor.copy(alpha = 0.2f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                SafeImage(
-                    resId = imageResId,
+                Icon(
+                    imageVector = Icons.Filled.CardGiftcard,
                     contentDescription = title,
-                    modifier = Modifier.size(72.dp).clip(CircleShape),
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                    fallbackIcon = Icons.Filled.CardGiftcard,
-                    fallbackTint = glowColor
+                    tint = glowColor,
+                    modifier = Modifier.size(72.dp)
                 )
             }
             

@@ -2,10 +2,18 @@ package com.example
 
 import com.example.data.ResearcherCatalog
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ResearcherIdentityTest {
+    @Test fun knownResearchersHaveArtworkAndUnknownIdsUseIconFallback() {
+        ResearcherCatalog.cards.forEach { assertNotNull(ResearcherStyle.artwork(it.id)) }
+        assertNull(ResearcherStyle.artwork(0))
+        assertNull(ResearcherStyle.artwork(27))
+    }
+
     @Test fun expansionHasDistinctCharacterNamesAndRenamesLegacyDisplayOnly() {
         val cards = ResearcherCatalog.cards
         assertEquals(26, cards.map { it.name }.distinct().size)

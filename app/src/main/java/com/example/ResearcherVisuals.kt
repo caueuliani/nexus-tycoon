@@ -57,7 +57,7 @@ internal object ResearcherStyle {
         else -> rarity
     }
 
-    fun artwork(id: Int): Int = when (id) {
+    fun artwork(id: Int): Int? = when (id) {
         1 -> R.drawable.img_sci_elon
         2 -> R.drawable.img_sci_curie
         3 -> R.drawable.img_sci_ada
@@ -84,10 +84,10 @@ internal object ResearcherStyle {
         24 -> R.drawable.img_sci_orion_doca
         25 -> R.drawable.img_sci_lyra_warp
         26 -> R.drawable.img_sci_vega_vetor
-        else -> R.drawable.img_scientist_card
+        else -> null
     }
 
-    fun artwork(researcher: ResearcherCard): Int = artwork(researcher.id)
+    fun artwork(researcher: ResearcherCard): Int? = artwork(researcher.id)
 
     fun frame(color: Color) = NexusVisuals.frame(color)
 }
@@ -147,15 +147,26 @@ private fun NexusRewardLine(label: String, value: String, accent: Color,
 @Composable
 internal fun ResearcherPortrait(researcher: ResearcherCard, size: androidx.compose.ui.unit.Dp) {
     val tint = ResearcherStyle.color(researcher.rarity)
-    SafeImage(
-        resId = ResearcherStyle.artwork(researcher),
-        contentDescription = "Retrato de ${researcher.name}",
-        modifier = Modifier.size(size).clip(RoundedCornerShape(12.dp))
-            .border(2.dp, ResearcherStyle.frame(tint), RoundedCornerShape(12.dp)),
-        contentScale = ContentScale.Crop,
-        fallbackIcon = Icons.Filled.Person,
-        fallbackTint = tint
-    )
+    val modifier = Modifier.size(size).clip(RoundedCornerShape(12.dp))
+        .border(2.dp, ResearcherStyle.frame(tint), RoundedCornerShape(12.dp))
+    val artwork = ResearcherStyle.artwork(researcher)
+    if (artwork != null) {
+        SafeImage(
+            resId = artwork,
+            contentDescription = "Retrato de ${researcher.name}",
+            modifier = modifier,
+            contentScale = ContentScale.Crop,
+            fallbackIcon = Icons.Filled.Person,
+            fallbackTint = tint
+        )
+    } else {
+        Icon(
+            imageVector = Icons.Filled.Person,
+            contentDescription = "Retrato de ${researcher.name}",
+            tint = tint,
+            modifier = modifier
+        )
+    }
 }
 
 private val rewardPattern = Regex("^(.*) \\(x([0-9]+)\\)$")
