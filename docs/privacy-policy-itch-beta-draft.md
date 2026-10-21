@@ -1,10 +1,10 @@
 # Nexus Tycoon — política de privacidade (rascunho para itchBeta)
 
-**Não publicar antes de preencher os campos entre colchetes e conferir os procedimentos operacionais.** Última revisão do rascunho: 20/10/2026.
+**Rascunho: não publicar antes de definir e conferir os procedimentos operacionais indicados abaixo.** Última revisão do rascunho: 20/10/2026.
 
 ## Quem é responsável
 
-O responsável pelo Nexus Tycoon é **[nome legal da pessoa física ou jurídica responsável]**. Para dúvidas e pedidos relativos a dados pessoais, escreva para **[e-mail público de privacidade]**. [Confirmar se são necessários outros dados de identificação e contato conforme a operação concreta.]
+O responsável pelo Nexus Tycoon é **Caue Felipe Uliani da Silva**, que atua sob o nome comercial **DevTecs**. Para suporte, dúvidas e pedidos relativos a dados pessoais, escreva para **[contatodevtecs@gmail.com](mailto:contatodevtecs@gmail.com)**. **[Antes da publicação: conferir no cadastro vigente o CNPJ, a identificação empresarial e os dados adicionais exigidos para a página de oferta, sem expor desnecessariamente o CPF do titular.]**
 
 ## Dados tratados e finalidade
 
@@ -30,7 +30,7 @@ Sair da conta encerra a sessão no aplicativo; **não apaga** os dados locais, o
 
 ## Seus direitos
 
-Você pode solicitar confirmação do tratamento, acesso, correção, informação sobre compartilhamento, portabilidade quando aplicável, revisão de decisões automatizadas quando cabível e exclusão nos casos previstos pela LGPD. Para exercer esses direitos, escreva para **[e-mail público de privacidade]**. O responsável deverá verificar a titularidade de modo proporcional, localizar os dados vinculados à conta e informar o resultado ou uma justificativa aplicável. **[Definir e testar o procedimento de atendimento antes da publicação.]** A orientação sobre direitos dos titulares está disponível na [ANPD](https://www.gov.br/anpd/pt-br/assuntos/titular-de-dados-1/direito-dos-titulares).
+Você pode solicitar confirmação do tratamento, acesso, correção, informação sobre compartilhamento, portabilidade quando aplicável, revisão de decisões automatizadas quando cabível e exclusão nos casos previstos pela LGPD. Para exercer esses direitos, escreva para **[contatodevtecs@gmail.com](mailto:contatodevtecs@gmail.com)**. O responsável deverá verificar a titularidade de modo proporcional, localizar os dados vinculados à conta e informar o resultado ou uma justificativa aplicável. **O procedimento de atendimento ainda precisa ser definido e testado antes da publicação.** A orientação sobre direitos dos titulares está disponível na [ANPD](https://www.gov.br/anpd/pt-br/assuntos/titular-de-dados-1/direito-dos-titulares).
 
 ## Adolescentes
 
