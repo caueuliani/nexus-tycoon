@@ -1,6 +1,6 @@
 # Etapa 3B — exclusão de conta e backup (procedimento proposto)
 
-**Estado: proposta operacional, NÃO homologada nem publicada.** Nenhuma conta real, backup real ou configuração Firebase de produção foi alterada nesta etapa. Não atualizar a política de privacidade para afirmar que a exclusão funciona até executar o ensaio integral abaixo.
+**Estado: ensaio técnico controlado concluído em 21/10/2026; procedimento operacional ainda não homologado para publicação.** A conta e o backup de teste autorizados foram excluídos do projeto existente `nexus-idle-tycoon`. A política de privacidade continua rascunho: o envio pelo canal oficial, sessões ativas e falhas reais ainda não foram homologados.
 
 ## Escopo confirmado pelo código
 
@@ -22,9 +22,17 @@
 
 O operador precisa definir antes do primeiro atendimento: controle de acesso, como gerar/registrar/destruir desafios, verificação de identidade em casos excepcionais, tratamento de falha parcial, registro mínimo da execução, eventual obrigação legal de conservação e prazo de resposta apropriado. Nenhum desses controles está operacionalmente confirmado. A revisão jurídica deve decidir se o atendimento manual é suficiente para a distribuição proposta.
 
-## Ensaio necessário antes de declarar GO
+## Ensaio técnico autorizado em 21/10/2026
 
-Usar **projeto Firebase de teste separado**, conta Google descartável e save fictício, nunca o projeto de produção nem o POCO principal. Criar sessão e backup fictícios; pedir exclusão pelo canal; testar desafio, busca de UID, exclusão de documento e Auth, verificação de ausência, falha parcial e comunicação final. Confirmar que um segundo UID não é afetado e que a operação não apaga dados locais sem ação do usuário. Guardar evidência sem e-mail completo, UID completo, token ou conteúdo do backup. Se não houver projeto/conta isolados, o ensaio integral fica pendente.
+O titular confirmou que as duas contas e backups usados em seus testes eram descartáveis e autorizou o uso do projeto existente `nexus-idle-tycoon`. Antes das exclusões, o console mostrou exatamente duas contas Google no Firebase Authentication e dois documentos em `users/{uid}`. Os alvos foram apresentados ao titular somente com identificadores mascarados: conta alvo `co***@gmail.com` / `HlR…8q1`, controle `ca***@gmail.com` / `mdU…3E2`. O titular confirmou especificamente a exclusão da conta e do documento do alvo, preservando o controle. Não foi feita limpeza ampla, nem alteração de regras ou configurações.
+
+O desafio de uso único foi enviado ao e-mail registrado na conta alvo. A resposta veio dessa caixa à conta operadora, continha o código e a confirmação explícita do escopo e chegou cerca de cinco minutos após o envio, dentro do prazo de dez minutos definido para o ensaio. **Limitação:** a caixa oficial `contatodevtecs@gmail.com` não estava conectada à ferramenta; o ensaio usou a conta operadora. O controle de geração, armazenamento e destruição de desafios para atendimento público ainda não está definido.
+
+No console, o operador confirmou novamente projeto e UIDs antes de agir. Removeu somente `users/HlR…8q1` e conferiu o estado intermediário: o documento alvo estava ausente, o documento de controle permanecia e a conta Auth alvo ainda existia. Em seguida excluiu somente a conta Auth alvo. A lista Auth passou de duas para uma conta, com ausência do alvo e presença do controle. A nova leitura do Firestore mostrou apenas o documento de controle. Não houve erro exibido nas duas operações. Esse estado intermediário demonstra como identificar **uma exclusão parcialmente concluída**, mas não testa uma falha de serviço ou a recuperação após ela.
+
+Não foi usada uma sessão autenticada ainda ativa do alvo; portanto não há evidência sobre tokens em cache, tentativas de regravar `users/{uid}` ou revogação em aparelho. O save local do POCO e o backup automático Android não foram alterados ou examinados. Não houve teste de subcoleções por busca administrativa abrangente; o código examinado grava apenas o documento direto. A segunda conta e seu backup foram preservados no console, sem ensaio de acesso pela própria sessão.
+
+Antes de abrir atendimento público, testar a troca pelo endereço oficial, definir guarda mínima do registro do pedido, instruções para falha parcial e resposta ao solicitante, e verificar a janela de sessão ativa com uma conta descartável. Não usar a conta de controle preservada para isso sem nova autorização específica. Guardar evidências sem e-mails/UIDs completos, códigos de desafio, tokens ou conteúdo do backup.
 
 ## Evidência obtida nesta etapa
 
@@ -32,6 +40,6 @@ Em 20/10/2026, `node --test firebase-tests/rules.test.mjs` passou **10/10** cont
 
 ## Decisão específica deste fluxo
 
-**NO-GO para afirmar que exclusão de conta e backup está atendida.** O procedimento manual é tecnicamente plausível sem backend pago ou mudança de gameplay, mas falta implementá-lo operacionalmente e homologá-lo ponta a ponta com conta descartável em projeto isolado. Não alterar a política pública nem publicar a variante até essa evidência existir. Caso o teste revele lacuna de verificação de titularidade ou corrida não controlável, o menor plano de código é uma ação autenticada de exclusão na área Perfil: confirmar, reautenticar Google quando exigido, excluir backup do UID e conta Auth, tratar falhas sem prometer sucesso e orientar sobre dados locais/backup Android. Esse plano deve ser revisado antes de qualquer implementação.
+**GO técnico restrito para a sequência manual documento → Auth, com verificação posterior dos dois registros e isolamento da segunda conta no console. NO-GO operacional para anunciar o fluxo como homologado ao público:** o desafio não saiu do canal oficial, a reação a falhas reais e sessões ativas não foi medida, e o procedimento de atendimento/registro ainda não está estabelecido. Não alterar a política pública nem publicar a variante com promessa de exclusão plenamente operacional até fechar essas lacunas. Se a janela de sessão ativa se mostrar insegura, avaliar revogação de tokens, bloqueio de regravação ou uma ação autenticada no Perfil; qualquer mudança de código requer escopo e teste próprios.
 
 Referências: [Firebase Auth — gerenciamento e exclusão de usuário](https://firebase.google.com/docs/auth/admin/manage-users), [Firebase Auth Android — exclusão e login recente](https://firebase.google.com/docs/auth/android/manage-users), [Firestore — exclusão de documentos e subcoleções](https://firebase.google.com/docs/firestore/manage-data/delete-data), [ANPD — direitos do titular](https://www.gov.br/anpd/pt-br/assuntos/titular-de-dados-1/direito-dos-titulares).
