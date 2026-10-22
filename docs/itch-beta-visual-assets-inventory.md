@@ -1,5 +1,7 @@
 # Etapa 3D — inventário visual da variante itchBeta
 
+**Atualização técnica posterior (21/10/2026):** o commit `b0a7c93` substituiu as três referências de cápsulas da loja por ícones Material e tornou explícito o ícone fallback para IDs de pesquisadores fora dos 26 conhecidos. Os quatro PNGs inválidos ainda estão no Git, mas não são referenciados pelo código de produção. Esta tabela preserva o estado histórico da inspeção da Etapa 3D; consulte [itch-beta-release-gate.md](itch-beta-release-gate.md) para o checkpoint atual.
+
 Estado em 21/10/2026: levantamento documental e inspeção visual, **não é liberação jurídica para distribuição**. Escopo: os 33 arquivos raster versionados em `app/src/main/res/`; nenhum foi substituído, removido ou alterado. `app/src/test/screenshots/greeting.png` é artefato de teste, não asset empacotado do jogo. Ícone do launcher, molduras e efeitos desenhados em XML/Compose são código, não arquivos raster adicionais.
 
 ## Origem e alcance da evidência

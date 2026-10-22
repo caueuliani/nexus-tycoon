@@ -1,5 +1,7 @@
 # Etapa 3 — privacidade e licenciamento (auditoria documental)
 
+**Atualização de estado (21/10/2026):** este texto registra os achados da auditoria original. O estado atual das pendências e dos bloqueadores está em [itch-beta-release-gate.md](itch-beta-release-gate.md). Após `b0a7c93`, o código de produção não referencia mais os quatro PNGs inválidos; o titular informou que as regras publicadas no Firebase Console coincidem com `firestore.rules`, sem leitura independente nesta etapa. O saneamento do CPF dos commits ainda locais foi realizado antes desta revisão. As observações históricas abaixo não devem ser lidas como retrato da branch atual.
+
 Escopo: código e arquivos versionados em `updates` após `660b4cd`, 20/10/2026. Sem build, sem consulta ao Firebase de produção, sem leitura de dados de jogadores e sem teste em aparelho. A política proposta está em `privacy-policy-itch-beta-draft.md` e **não está publicada**.
 
 Identificação pública proposta a partir das informações do responsável em 20/10/2026: **Caue Felipe Uliani da Silva**, nome comercial **DevTecs**, canal público de suporte/privacidade/exclusão **contatodevtecs@gmail.com**. O sufixo numérico da razão social informada anteriormente é o CPF do titular: tratá-lo como dado pessoal e não o reproduzir nesta política, no material promocional ou na página itch.io sem necessidade legal confirmada. Conservar a razão social oficial exata nos cadastros e documentos que a exigirem; nenhuma alteração cadastral foi realizada.
