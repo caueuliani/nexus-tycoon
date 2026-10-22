@@ -15,7 +15,7 @@
         </intent>
         <package android:name="com.android.vending" tools:node="remove" />
     </queries>
-    <application android:debuggable="false">
+    <application>
         <meta-data android:name="com.google.android.play.billingclient.version" tools:node="remove" />
         <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" tools:node="remove" />
         <activity android:name="com.google.android.libraries.ads.mobile.sdk.common.AdActivity" tools:node="remove" />
