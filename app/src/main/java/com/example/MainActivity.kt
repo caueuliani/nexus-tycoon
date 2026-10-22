@@ -3873,20 +3873,15 @@ fun ShopAndEventTab(
             modifier = Modifier.fillMaxWidth()
         ) {
             Column {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "EVENTO LOCAL: ${event.name}",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Black,
-                        color = SolarGold
-                    )
-                    Badge(containerColor = SolarGold) {
-                        Text("Objetivos locais", modifier = Modifier.padding(2.dp), fontWeight = FontWeight.Bold)
-                    }
+                Text(
+                    text = "EVENTO LOCAL: ${if (event.name == "Nebula Star Event") "Estrela da Nebulosa" else event.name}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Black,
+                    color = SolarGold
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Badge(containerColor = SolarGold) {
+                    Text("Objetivos locais", modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp), fontWeight = FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
@@ -3910,7 +3905,16 @@ fun ShopAndEventTab(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(task.description, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text(
+                                    when (task.taskId) {
+                                        "Energy Supplier" -> "Produza 1.500 Células de Energia"
+                                        "Mega Titan Upgrader" -> "Evolua uma unidade de Segurança ao nível 5"
+                                        "Celestial Capitalist" -> "Alcance 50.000 créditos"
+                                        else -> task.description
+                                    },
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
                                 LinearProgressIndicator(
                                     progress = (task.progress / task.target).toFloat().coerceIn(0f, 1f),
                                     modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
