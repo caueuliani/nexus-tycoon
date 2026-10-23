@@ -1,6 +1,6 @@
 # Nexus Tycoon itchBeta — revisão de avisos de terceiros
 
-Estado em 23/10/2026: **inventário de revisão, não aviso final de distribuição**. A lista parte das dependências declaradas em `app/build.gradle.kts` e `gradle/libs.versions.toml`; não houve resolução completa do grafo de runtime ou auditoria de cada AAR/JAR transitive nesta etapa.
+Estado em 23/10/2026: **inventário de revisão, não aviso final de distribuição**. Além das dependências declaradas, a configuração `itchBetaRuntimeClasspath` foi resolvida com o Gradle em modo offline, sem recompilar o APK. O resultado confirma as famílias abaixo no grafo de runtime, mas não prova quais classes/recursos sobreviveram ao empacotamento nem audita cada AAR/JAR transitivo.
 
 | Grupo declarado | Evidência de licença/termos | Ação antes da distribuição |
 | --- | --- | --- |
@@ -13,4 +13,6 @@ Estado em 23/10/2026: **inventário de revisão, não aviso final de distribuiç
 
 Os efeitos `sfx_*.wav` têm declaração de síntese procedural própria e fonte em `tools/generate_sfx.py`, documentadas em `SOUND_ASSETS.md`. As imagens têm origem geral por IA declarada pelo proprietário, com ferramenta individual majoritariamente não confirmada; o inventário visual registra essa limitação. Esses itens não substituem os avisos de bibliotecas.
 
-Para fechar: obter o grafo `itchBetaRuntimeClasspath` sem refazer a build, identificar licenças e arquivos `NOTICE` das versões resolvidas, preparar o texto completo de avisos que acompanhe o APK/página e revisar manualmente. Esta etapa identificou famílias e fontes, **não** confirmou que todos os avisos obrigatórios estão prontos.
+**Versões diretas observadas no grafo resolvido:** Kotlin stdlib 2.2.10; AndroidX Credentials 1.3.0, Activity Compose 1.10.1, Compose UI 1.7.0, Material3 1.3.0, Room 2.7.0, Core KTX 1.18.0, Lifecycle 2.8.7; coroutines 1.10.2; Firebase Auth 24.0.1 e Firestore 26.2.0; Google Play Services Auth 21.1.1; Ads Mobile SDK 1.5.0, UMP 4.0.0 e Billing 8.3.0; Retrofit 2.12.0, OkHttp 4.11.0 e Moshi 1.15.2. BOMs e artefatos de teste não devem ser tratados como binários distribuídos apenas por constarem no relatório.
+
+**Para fechar antes da distribuição:** extrair os metadados de licença e eventuais arquivos `NOTICE` de **todos os artefatos efetivamente empacotados**, incluir os textos exigidos (em especial o texto integral Apache-2.0 e avisos dos componentes que o exigirem), conferir os termos dos SDKs Google e revisar o pacote final. A [licença Apache-2.0 oficial](https://www.apache.org/licenses/LICENSE-2.0) fornece o texto de referência. Esta inspeção melhorou o inventário, mas **não confirmou que os avisos obrigatórios estão completos**; publicar apenas com a tabela acima seria prematuro.
