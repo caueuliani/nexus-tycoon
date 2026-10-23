@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Privacidade — Nexus Tycoon</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #080e1c; color: #edf3ff; line-height: 1.6; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header { border-bottom: 1px solid #365272; background: linear-gradient(130deg,#102846,#211b47); padding: 2.5rem 1rem; }
+    header div, main, footer { max-width: 780px; margin: auto; }
+    .eyebrow { color: #57e5f2; font-size: .9rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { font-size: clamp(2rem, 7vw, 3.2rem); line-height: 1.1; margin: .4rem 0; }
+    h2 { color: #72e9f6; font-size: 1.35rem; margin-top: 2.4rem; }
+    main { padding: 1.2rem 1rem 3rem; }
+    a { color: #9ddaff; overflow-wrap: anywhere; }
+    a:focus-visible { outline: 3px solid #ffbc47; outline-offset: 3px; }
+    .intro { color: #c1d1e7; font-size: 1.1rem; }
+    .note { border-left: 4px solid #ffbc47; background: #171f35; padding: .8rem 1rem; }
+    ul { padding-left: 1.4rem; }
+    li { margin-bottom: .5rem; }
+    footer { border-top: 1px solid #365272; padding: 1.5rem 1rem 3rem; color: #aabbd3; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <header><div>
+    <p class="eyebrow">Nexus Tycoon · beta Android</p>
+    <h1>Política de privacidade</h1>
+    <p>Atualizada em 23 de outubro de 2026</p>
+  </div></header>
+  <main>
+    <p class="intro">Você pode jogar Nexus Tycoon sem vincular uma Conta Google. O login é opcional e serve para criar e restaurar um backup manual na nuvem.</p>
+
+    <h2>Responsável e contato</h2>
+    <p>O responsável pelo jogo é <strong>Caue Felipe Uliani da Silva</strong>, sob o nome comercial <strong>DevTecs</strong>. Para suporte ou solicitações relativas a dados pessoais, escreva para <a href="mailto:contatodevtecs@gmail.com">contatodevtecs@gmail.com</a>.</p>
+
+    <h2>Dados mantidos no aparelho</h2>
+    <p>O jogo guarda localmente seu nome de corporação, recursos e moedas virtuais, indústrias, pesquisadores, missões, combate, progresso de Ascensão, preferências e registros necessários para evitar recompensas duplicadas. Esses dados permitem continuar a partida e aplicar suas regras. As preferências de áudio também ficam no aparelho. Componentes do aplicativo podem registrar erros em logs do Android.</p>
+
+    <h2>Login e backup manual</h2>
+    <p>Ao escolher “Vincular com o Google”, o aplicativo usa Google Identity Services e Firebase Authentication. Ele utiliza o identificador Firebase da conta (UID) e o e-mail para mostrar a sessão e associar o backup. O token de autenticação não é adicionado ao documento de progresso.</p>
+    <p>Ao tocar em “Salvar na Nuvem”, uma cópia do progresso é gravada no Cloud Firestore em <code>users/{uid}</code>. Ela inclui dados de jogo como nome da corporação, saldos virtuais, indústrias, pesquisadores, missões, combate, preferências e marcadores de recompensas. Um novo salvamento nesse caminho substitui o documento anterior. “Carregar Nuvem” lê o documento e, após validação, substitui o progresso local. Esses botões dependem de sua ação; o jogo não envia esse backup manual automaticamente.</p>
+    <p>As regras Firestore configuradas para o projeto permitem que uma conta autenticada leia e grave somente seu próprio documento <code>users/{uid}</code> e negam a listagem geral. O acesso administrativo do operador é separado dessas regras.</p>
+
+    <h2>Backup do próprio Android</h2>
+    <p>Além do botão do jogo, o Android pode fazer backup automático dos dados do aplicativo e transferi-los para outro aparelho, conforme a versão e as configurações do sistema e da sua Conta Google. Isso pode incluir o banco local do jogo. A DevTecs não consegue apagar remotamente cópias guardadas pelo sistema Android ou em outro aparelho. Consulte a <a href="https://developer.android.com/identity/data/autobackup">documentação de backup do Android</a> para entender esse mecanismo.</p>
+
+    <h2>Serviços externos e monetização nesta beta</h2>
+    <p>O login e o backup opcionais envolvem serviços da Google: Google Identity Services, Firebase Authentication e Cloud Firestore. A variante gratuita distribuída no itch.io não oferece anúncios, compras com dinheiro real ou telemetria própria de Firebase Analytics/Crashlytics. Bibliotecas de Google Mobile Ads, UMP e Google Play Billing ainda estão empacotadas no aplicativo, mas os fluxos comerciais do jogo estão desativados nesta variante. Isso não deve ser interpretado como garantia de ausência de todo processamento interno pelos SDKs; consulte também as informações de privacidade dos serviços Google.</p>
+
+    <h2>Conservação e proteção</h2>
+    <p>O progresso local permanece no aparelho enquanto os dados do aplicativo forem mantidos, ressalvados os mecanismos de backup do Android. A conta Firebase e o backup manual permanecem associados à Conta Google até sua remoção pelo operador. Não foi definido um prazo fixo geral de conservação para esses registros. A transmissão e a infraestrutura dos serviços Google seguem as proteções e condições do próprio fornecedor. O jogo valida o formato do backup antes de restaurá-lo.</p>
+
+    <h2>Seus pedidos e a exclusão de dados</h2>
+    <p>Para pedir confirmação, acesso, correção ou exclusão de dados associados ao login e backup, escreva para <a href="mailto:contatodevtecs@gmail.com">contatodevtecs@gmail.com</a>. Não envie senha, token de login, código de autenticação ou documento pessoal na mensagem inicial. O operador verificará a titularidade por um desafio enviado ao endereço de e-mail registrado no Firebase Authentication; o campo “remetente” isoladamente não basta.</p>
+    <p>Após a verificação, o operador conferirá o projeto e o UID e tratará o documento <code>users/{uid}</code> e a conta Firebase Authentication correspondentes. Se uma etapa falhar, o pedido continuará aberto e a conclusão só será comunicada após conferir a ausência dos registros envolvidos. Sessões já abertas podem continuar exibindo estado antigo por algum tempo, por isso a verificação também considera eventual reaparecimento do backup.</p>
+    <p>O procedimento remoto não remove o save Room do aparelho, cópias em outros dispositivos nem o backup automático do Android. Sair da conta no jogo também não exclui a conta Firebase ou seu backup. A <a href="https://www.gov.br/anpd/pt-br/assuntos/titular-de-dados/direito-dos-titulares">ANPD explica os direitos dos titulares</a> e as condições aplicáveis a cada pedido.</p>
+
+    <h2>Adolescentes</h2>
+    <p>O público pretendido para o jogo é de 13 anos ou mais. O aplicativo não verifica a idade nem possui um fluxo específico de responsável legal. Pedidos envolvendo dados de adolescentes serão avaliados considerando seu melhor interesse e os direitos previstos na legislação aplicável.</p>
+
+    <h2>Mudanças nesta política</h2>
+    <p>Esta página mostrará a data da versão vigente. Mudanças relevantes serão comunicadas nesta página e, quando necessário, por outros canais apropriados antes de novas formas de tratamento.</p>
+  </main>
+  <footer>Nexus Tycoon · DevTecs · <a href="mailto:contatodevtecs@gmail.com">contatodevtecs@gmail.com</a></footer>
+</body>
+</html>
