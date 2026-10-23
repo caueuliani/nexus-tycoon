@@ -1,0 +1,36 @@
+# Nexus Tycoon itchBeta — avisos de componentes de terceiros
+
+Estado em 23/10/2026. Este documento registra **o que foi comprovado** pela árvore `itchBetaRuntimeClasspath` já produzida, pelos POMs do cache local e pelas fontes oficiais indicadas. A árvore contém 201 coordenadas resolvidas, inclusive BOMs e marcadores que não são necessariamente binários do APK. Ela **não equivale** a um inventário dos arquivos efetivamente empacotados. Este arquivo ainda **não é uma declaração de conformidade para distribuição pública**; as pendências finais estão ao fim.
+
+## Componentes de código aberto identificados
+
+| Componentes encontrados na árvore | Licença/atribuição comprovada | Fonte oficial e texto |
+| --- | --- | --- |
+| AndroidX (Compose, Material, Activity, Lifecycle, Room, Core, Credentials e transitivos) | POMs declaram Apache License 2.0; copyrights e eventuais `NOTICE` de cada artefato devem ser preservados. | [AndroidX LICENSE](https://github.com/androidx/androidx/blob/androidx-main/LICENSE.txt); [texto oficial Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0.txt). |
+| Kotlin stdlib, Kotlin reflect e kotlinx.coroutines | POMs declaram Apache License 2.0. | [Kotlin LICENSE](https://github.com/JetBrains/kotlin/blob/master/license/LICENSE.txt); [coroutines LICENSE](https://github.com/Kotlin/kotlinx.coroutines/blob/master/LICENSE.txt). |
+| Square Retrofit 2.12.0, OkHttp 4.11.0 e Moshi 1.15.2 | POMs e projetos upstream declaram Apache License 2.0. | [Retrofit](https://github.com/square/retrofit/blob/trunk/LICENSE.txt), [OkHttp](https://github.com/square/okhttp/blob/master/LICENSE.txt), [Moshi](https://github.com/square/moshi/blob/master/LICENSE.txt). |
+| Outros transitivos com POM Apache-2.0, incluindo gRPC, JSpecify e módulos Google declarados como abertos | Os POMs locais registram variantes do nome “Apache 2.0”; a atribuição exata e arquivos `NOTICE` ainda exigem inspeção por artefato. | [Texto oficial Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0.txt). |
+| Guava 32.1.3-android e `failureaccess` 1.0.1 | Os POMs locais não trazem campo de licença; o projeto Guava upstream declara Apache-2.0. A aplicação dessa atribuição aos dois artefatos deve ser confirmada no código-fonte/artefato da versão. `listenablefuture:9999.0-empty-to-avoid-conflict-with-guava` é um marcador vazio no grafo, não uma biblioteca funcional a atribuir sem verificar o APK. | [Guava upstream e licença](https://github.com/google/guava), [Guava v32.1.3 LICENSE](https://github.com/google/guava/blob/v32.1.3/LICENSE). |
+| AndroidX `datastore-preferences-external-protobuf` 1.1.7 e `protobuf-javalite` 3.25.5 | O primeiro POM declara BSD-3-Clause e o [build upstream](https://android.googlesource.com/platform/frameworks/support/+/androidx-main/datastore/datastore-preferences-external-protobuf/build.gradle) mostra que ele reempacota protobuf-lite. O POM local de `protobuf-javalite` não declara licença; o projeto Protocol Buffers publica licença BSD-3 com copyright de Google Inc. A reprodução exata dos avisos de ambos ainda precisa ser conferida. | [Protocol Buffers v25.5 LICENSE](https://github.com/protocolbuffers/protobuf/blob/v25.5/LICENSE); [BSD-3-Clause](https://opensource.org/licenses/BSD-3-Clause). |
+| `re2j` 1.6 | O POM indica “Go License”; o projeto explica ser derivado de RE2 em Go e publica texto BSD-style com atribuições próprias. Não rotular simplesmente como Apache. | [RE2/J LICENSE](https://github.com/google/re2j/blob/master/LICENSE), [repositório RE2/J](https://github.com/google/re2j). |
+| `checker-qual` 3.37.0 | O POM indica MIT. O JAR da versão contém `META-INF/LICENSE.txt`; o projeto publica texto de licença próprio com atribuições. | [Checker Framework LICENSE](https://github.com/typetools/checker-framework/blob/checker-framework-3.37.0/LICENSE.txt). |
+| `animal-sniffer-annotations` 1.23 | O POM local não declara licença. O repositório oficial MojoHaus identifica o projeto como MIT; falta confirmar se o mesmo texto e avisos acompanham exatamente esse módulo da versão 1.23. | [MojoHaus Animal Sniffer](https://github.com/mojohaus/animal-sniffer), [releases oficiais](https://github.com/mojohaus/animal-sniffer/releases). |
+| Cinco módulos `org.chromium.net` 143.7445.0 (Cronet) | Os POMs registram “Chromium and built-in dependencies” e apontam para um arquivo de licença **da versão exata**, com múltiplas atribuições. Um resumo BSD isolado não substitui esse arquivo. | [Cronet 143.0.7445.0 LICENSE](https://storage.googleapis.com/chromium-cronet/android/143.0.7445.0/Release/cronet/LICENSE). |
+
+O texto integral oficial da licença Apache-2.0 foi preservado em [docs/third-party-licenses/APACHE-2.0.txt](docs/third-party-licenses/APACHE-2.0.txt), obtido de `https://www.apache.org/licenses/LICENSE-2.0.txt`. Isso não substitui eventuais arquivos `NOTICE` nem os textos BSD/MIT/Go/Chromium necessários para outros artefatos.
+
+## SDKs Google sujeitos a termos próprios
+
+Os POMs locais de Firebase Authentication, Google Identity/Play Services, Google Mobile Ads, UMP e Google Play Billing indicam [Android SDK License](https://developer.android.com/studio/terms.html). Os artefatos `com.google.android.play:core-common:2.0.3` e `integrity:1.3.0` apontam, respectivamente, para [Play Core SDK Terms](https://developer.android.com/guide/playcore/license) e [Play Integrity API Terms](https://developer.android.com/google/play/integrity/overview#tos). Os componentes de anúncios/Billing continuam na árvore da `itchBeta`, embora seus fluxos comerciais tenham sido bloqueados nessa variante. **Termos de SDK não devem ser apresentados como licença Apache-2.0**, e a presença no grafo não prova uso ativo no runtime.
+
+## Fora deste aviso
+
+Dependências apenas de teste (JUnit, Robolectric, Roborazzi e AndroidX Test) não entram neste aviso de runtime sem evidência de redistribuição. Imagens geradas por IA e efeitos sonoros originais estão documentados separadamente em `docs/itch-beta-visual-assets-inventory.md` e `SOUND_ASSETS.md`.
+
+## Pendências precisas antes da distribuição pública
+
+1. Conferir os AAR/JAR e o APK **efetivamente empacotado** para distinguir código redistribuído de BOMs, marcadores e dependências eliminadas; preservar quaisquer `NOTICE`, copyrights e licenças adicionais incorporados. Esta etapa ainda não foi realizada.
+2. Incluir, no material entregue ao usuário, o texto integral e as atribuições das licenças BSD-3 de protobuf/DataStore, MIT de Checker Framework/Animal Sniffer e BSD-style/Go de RE2/J, após confirmar a versão exata e os copyrights. Os links acima **não substituem** o texto quando a licença exige reprodução na distribuição binária.
+3. Reproduzir ou acompanhar a distribuição com o arquivo de licença/atribuições completo do **Cronet 143.0.7445.0**, disponibilizado no endereço oficial acima. Ele é extenso e não foi incluído neste documento; sem ele não há base para afirmar que todos os avisos do Cronet foram atendidos.
+4. Conferir termos aplicáveis aos SDKs proprietários Google e a forma correta de expor avisos no itch.io/APK. O simples link aos termos neste inventário não prova cumprimento contratual.
+5. Revisar manualmente as atribuições e o pacote final antes de trocar o estado deste documento para aviso de distribuição. **Não declarar o beta juridicamente liberado com base apenas nesta árvore de dependências.**
