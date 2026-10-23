@@ -29,7 +29,7 @@ android {
     applicationId = "com.aistudio.idletycoon.nxtyc"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
+    versionCode = 2
     versionName = "1.0"
     buildConfigField("String", "FIREBASE_PROJECT_ID", "\"nexus-idle-tycoon\"")
     buildConfigField("boolean", "FIREBASE_CONFIGURED", hasFirebaseConfig.toString())
@@ -71,7 +71,7 @@ android {
     create("itchBeta") {
       initWith(getByName("release"))
       isDebuggable = false
-      versionNameSuffix = "-itch-beta.1"
+      versionNameSuffix = "-itch-beta.2"
       buildConfigField("boolean", "ITCH_BETA", "true")
       buildConfigField("String", "ADMOB_APP_ID", "\"\"")
       buildConfigField("String", "REWARDED_AD_UNIT_ID", "\"\"")
