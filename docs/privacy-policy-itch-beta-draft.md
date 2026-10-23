@@ -1,6 +1,6 @@
 # Nexus Tycoon — política de privacidade (rascunho para itchBeta)
 
-**Rascunho: não publicar antes de definir e conferir os procedimentos operacionais indicados abaixo.** Última revisão do rascunho: 21/10/2026.
+**Versão consolidada para revisão do titular, ainda não publicada.** O ensaio técnico de exclusão e o texto de regras informadas pelo titular estão descritos abaixo com suas limitações. Antes da publicação, resolver as decisões assinaladas entre colchetes e revisar juridicamente a identificação, a retenção, o atendimento de direitos e o tratamento de adolescentes. Última revisão do rascunho: 23/10/2026.
 
 ## Quem é responsável
 
